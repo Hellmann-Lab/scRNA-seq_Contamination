@@ -1,6 +1,7 @@
 # scRNA-seq background RNA
 
-This repository contains the necessary code to reproduce the analysis for the manuscript **"Characterization of background RNA contamination in scRNA-seq mixture datasets"**.
+This repository contains the necessary code to reproduce the analysis for the manuscript **"The effect of background noise and its removal on
+the analysis of single-cell expression data"**.
 
 ## Snakemake
 
@@ -13,13 +14,9 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 - **applying different correction methods:** We compare three methods that are designed to remove noise originating from ambient/ background RNA: [CellBender](https://www.biorxiv.org/content/10.1101/791699v1), [SoupX](https://doi.org/10.1093/gigascience/giaa151) and [DecontX](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1950-6) in a range of different parameter settings. 
 - **evaluation of correction performance:** We evaluated the output of each method by comparing to our genotype based estimations and calculating metrics to assess denoising performance.
 
-## Further analysis
+## Figure scripts
 
-Beyond the standardized pipeline, we summarize results and perform further analysis with regards to  
+Beyond the standardized pipeline, we summarize results and perform further analysis and create figures with regards to  
 - **dataset composition**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy. 
 - **origin of background RNA**: Comparison of endogenous expression, background RNA contamination and empty droplet profiles.
 - **method benchmark**: Summarizing the method comparison results across datasets and parameter settings. 
-
-## Figures
-
-Here, we provide the scripts to generate the figures in the manuscript. 
