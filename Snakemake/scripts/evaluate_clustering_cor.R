@@ -1,35 +1,27 @@
 # external and internal cluster evaluation
 args <- commandArgs(TRUE)
 
-library(tidyverse)
-library(cluster)
-library(tidyseurat)
-library(ClusterR)
-library(SingleR)
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(cluster)
+  library(tidyseurat)
+  library(ClusterR)
+  library(SingleR)
+})
 
-cluster_evaluation <- function(corrected_dir, seurat, cluster_evaluation_external, cluster_evaluation_internal, silhouette_per_cell, classification_evaluation){
-  # read in annotated seurat object for celltype labels
-  seu <- readRDS(seurat)
-  # only consider cell types with sufficient number of cells in CAST (>10)
-  celltypes_keep <- seu %>% 
-    filter(Strain == "CAST") %>% 
-    group_by(celltype) %>% 
-    summarise(n_cells = n()) %>% 
-    filter(n_cells > 10) %>% 
-    pull(celltype)
+cluster_evaluation <- function(corrected_dir, seurat,classification_evaluation, cluster_evaluation_external_cor, cluster_evaluation_internal_cor, silhouette_per_cell_cor){
+  # read in classification result for cell type labels
+  print("reading in classification result")
+  class <- readRDS(classification_evaluation)
   
-  seu_filt <- filter(seu, 
-                     celltype %in% celltypes_keep, 
-                     #celltype %in% c("PT", "DCT", "aLOH"),
-                     Strain == "CAST")
-  
-  
-  # read output of different parameter settings
+  print("performing clustering")
   seu_list_corrected <- list()
-  for(mat in list.files(corrected_dir, pattern = "_cormat.RDS")){
-    cor_mat <- readRDS(paste0(corrected_dir,"/",mat))
-    filt_mat <- as.matrix(cor_mat)[,colnames(seu_filt)]
-    seu <- CreateSeuratObject(counts = filt_mat, meta.data = seu_filt@meta.data)
+  for(param in names(class)){
+    celltype_annotation <- column_to_rownames(class[[param]]$celltype_labels, "cell")
+    
+    cor_mat <- readRDS(paste0(corrected_dir,"/",param,"_cormat.RDS"))
+    filt_mat <- as.matrix(cor_mat)[,rownames(celltype_annotation)]
+    seu <- CreateSeuratObject(counts = filt_mat, meta.data = celltype_annotation)
     seu <- NormalizeData(seu)
     seu <- FindVariableFeatures(seu, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
     #seu <- ScaleData(seu) #only performs scaling on top 2000 variable features
@@ -38,8 +30,25 @@ cluster_evaluation <- function(corrected_dir, seurat, cluster_evaluation_externa
     # more PCs
     seu <- FindNeighbors(seu, dims = 1:30)
     seu <- FindClusters(seu, resolution = 1)
-    seu_list_corrected[[gsub("_cormat.RDS","",mat)]] <- seu
+    seu_list_corrected[[param]] <- seu
   }
+  
+  # read in seurat object for uncorrected cell type labels in order to filter cell types to be comparable across methods
+  seu_uncor <- readRDS(seurat)
+  
+  # only consider cell types with sufficient number of cells in CAST (>10) in uncorrected data
+  celltypes_keep <- seu_uncor %>% 
+    filter(Strain == "CAST") %>% 
+    group_by(celltype) %>% 
+    summarise(n_cells = n()) %>% 
+    filter(n_cells > 10) %>% 
+    pull(celltype)
+  
+  # filter corrected seurat objects
+  seu_list_corrected <- lapply(seu_list_corrected, function(x){
+    filter(x, celltype %in% celltypes_keep)
+  })
+  
   
   #### EXTERNAL CLUSTER EVALUATION ####
   external_eval <- lapply(seu_list_corrected, function(seu){
@@ -57,7 +66,7 @@ cluster_evaluation <- function(corrected_dir, seurat, cluster_evaluation_externa
     return(ext_df)
   }) %>% bind_rows(.id = "param")
   
-  saveRDS(external_eval, cluster_evaluation_external)
+  saveRDS(external_eval, cluster_evaluation_external_cor)
   
   
   #### INTERNAL CLUSTER EVALUATION ####
@@ -82,23 +91,8 @@ cluster_evaluation <- function(corrected_dir, seurat, cluster_evaluation_externa
     return(sil_allCells_df)
   })
   
-  saveRDS(internal_eval, cluster_evaluation_internal)
-  saveRDS(sil_per_cell, silhouette_per_cell)
-  
-  #### CLASSIFICATION ####
-  train_denisenko <- readRDS("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/files/reference_data/trainSingleR_denisenko.RDS")
-  
-  classification_res <- lapply(seu_list_corrected, function(seu){
-    pred <- classifySingleR(test = GetAssayData(seu, "data"), 
-                            trained = train_denisenko, 
-                            fine.tune = F, BPPARAM=BiocParallel::MulticoreParam(8))
-    
-    res = list(prediction_result = pred,
-               celltype_labels = data.frame(cell = colnames(seu), celltype = pred$pruned.labels))
-    return(res)
-  })
-  
-  saveRDS(classification_res, classification_evaluation)
+  saveRDS(internal_eval, cluster_evaluation_internal_cor)
+  saveRDS(sil_per_cell, silhouette_per_cell_cor)
   
 }
   

@@ -1,0 +1,733 @@
+---
+title: "03_effect_on_downstream_analysis"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(tidyverse)
+library(cowplot)
+library(tidyseurat)
+
+replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey"), 
+                             c("rep1", "rep2", "rep3", "nuc2"))
+```
+
+## Example UMAP for a marker gene with background RNA
+
+```{r umap, fig.width=4, fig.height=4}
+seurat_rep2_CAST <- readRDS("Snakemake_backup/input/rep2/seurat_CAST.RDS")
+
+### UMAP ####
+expr <- seurat_rep2_CAST@assays$RNA@counts["Slc34a1",]
+p.UMAP_Slc34a1 <- ggplot(seurat_rep2_CAST, aes(x =UMAP_1, y = UMAP_2, color = log2(expr+1)))+
+    geom_point(size = 0.6)+
+    scale_color_continuous(low = "lightgrey", high = "red")+
+    scale_y_continuous(limits = c(-20,15))+
+    annotate("text", x = 3, y = 8, label = "PT cells")+
+    theme_bw()+
+    ggtitle("Slc34a1 expression (rep 2)")+
+    labs(x = "UMAP 1", y = "UMAP 2", color = "log2(count+1)")+
+    theme(legend.position = c(0.2,0.2), 
+          axis.text = element_blank(), axis.ticks = element_blank())
+
+p.UMAP_Slc34a1
+```
+
+
+### Slc34a1 UMAP for all replicates
+
+```{r slc34a1_umaps}
+rep = "rep1"
+
+plot_slc_UMAP <- function(rep){
+  seurat_CAST <- readRDS(paste0("Snakemake_backup/input/",rep,"/seurat_CAST.RDS"))
+  expr <- seurat_CAST@assays$RNA@counts["Slc34a1",]
+  p.UMAP_Slc34a1 <- ggplot(seurat_CAST, aes(x =UMAP_1, y = UMAP_2, color = log2(expr+1)))+
+      geom_point(size = 0.6)+
+      scale_color_continuous(low = "lightgrey", high = "red", limits = c(0,7))+
+      #scale_y_continuous(limits = c(-20,15))+
+      #annotate("text", x = 3, y = 8, label = "PT cells")+
+      theme_bw()+
+      ggtitle(paste0("Slc34a1 expression (",rep,")"))+
+      labs(x = "UMAP 1", y = "UMAP 2", color = "log2(count+1)")+
+      theme(legend.position = "none",
+            axis.text = element_blank(), axis.ticks = element_blank())
+  
+  return(p.UMAP_Slc34a1)
+}
+
+slc_UMAP_list <- list(
+  rep1 = plot_slc_UMAP("rep1"),
+  rep2 = plot_slc_UMAP("rep2"),
+  rep3 = plot_slc_UMAP("rep3"),
+  nuc2 = plot_slc_UMAP("nuc2"),
+  nuc3 = plot_slc_UMAP("nuc3")
+)
+
+slc_UMAP_list$legend <- get_legend(plot_slc_UMAP("rep1")+theme(legend.position = "right"))
+
+p.slc_UMAP_replicates <- plot_grid(plotlist = slc_UMAP_list)
+
+ggsave("figures/Suppl_figure_Slc34a1_UMAP_replicates.pdf", p.slc_UMAP_replicates, width = 8, height = 6)
+
+```
+
+
+
+## Expression fraction in other cells
+
+```{r expr_fraction}
+evaluation_list <- list()
+for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+  evaluation_list[["DE"]][[rep]] <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/raw/",rep, "/differential_expression_seurat.RDS"))
+  #evaluation_list[["DE"]][[rep]] <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/raw/",rep, "/differential_expression.RDS"))
+  evaluation_list[["cluster_evaluation_internal"]][[rep]] <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/raw/",rep,"/cluster_evaluation_internal.RDS"))
+  evaluation_list[["expression_fraction"]][[rep]] <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/raw/",rep, "/expression_fraction_PT_markers.RDS"))
+}
+
+expression_fraction <- bind_rows(evaluation_list$expression_fraction, .id = "replicate")
+DE <- bind_rows(evaluation_list$DE, .id = "replicate") %>% 
+  rownames_to_column("gene") %>% 
+  mutate(gene = gsub("\\..*", "", gene))
+```
+
+
+```{r Slc34a1_expr_fraction}
+p.expr_frac_Slc34a1 <- expression_fraction %>% 
+  filter(gene == "Slc34a1") %>% 
+  pivot_longer(cols = c(expr_within_celltype, expr_within_others), values_to = "expression_fraction", names_to = "category") %>% 
+  mutate(celltype = case_when(category == "expr_within_celltype" ~ "PT cells", 
+                              category == "expr_within_others" ~ "other"),
+        replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")),
+        celltype = factor(celltype, levels = c("PT cells", "other"))) %>% 
+  ggplot(aes(x = replicate, y = expression_fraction * 100, fill = celltype))+
+    geom_col(position = "dodge", color = "black")+
+    scale_fill_manual(values = c("lightgrey", "darkgrey"))+
+    labs(y = "expr. frac. (%)")+
+    theme_bw()+
+    theme(axis.title.x = element_blank(), legend.position = "none")
+
+p.expr_frac_Slc34a1
+  
+```
+
+## lfc of Slc34a1
+
+```{r Slc34a1_lfc}
+p.lfc_Slc34a1 <- DE %>% 
+  filter(gene == "Slc34a1") %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3", "nuc2"))) %>% 
+  ggplot(aes(x = replicate, y = avg_log2FC))+
+    geom_point(size = 3, color = "darkgrey")+
+    #geom_errorbar(aes(ymin = CI.L, ymax = CI.R), width = 0.2, position = position_dodge(width = 0.5))+
+    #scale_color_manual(values = replicate_colors)+
+    theme_bw()+
+    theme(legend.position = "none", axis.title.x = element_blank())+
+    labs(y = "logFC")
+
+p.lfc_Slc34a1
+
+```
+## Contamination fraction of Slc34a1
+
+```{r cont_frac}
+cell_metadata <- readRDS(file = "Extra_analyses/cell_metadata.RDS")
+
+source("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/genotype_estimation/genotype_estimation_functions.R")
+
+calculate_cont_perGeneCT_binom <- function(rep, genes, CI_alpha){
+  
+  csc_int <-  readRDS(paste0("Snakemake_backup/genotype_estimation/",rep,"/csc_intermediate.RDS"))
+  csc <- calculate_crossGT_contamination(csc_int)
+  csc <- remove_strain_specific_variants(csc)
+  
+  cell_annotation <- cell_metadata %>% 
+    filter(replicate == rep, Strain == "CAST") %>% 
+    dplyr::select(cell,celltype)
+  
+  cont_frac <- csc %>%
+    dplyr::select(position, cell, genoNormAD, DP, SYMBOL, contAllele_fraction) %>% 
+    filter(SYMBOL %in% genes) %>% 
+    inner_join(cell_annotation) %>% 
+    mutate(category = ifelse(celltype == "PT", "within_celltype", "within_others")) %>%
+    
+    group_by(SYMBOL, category) %>% 
+    summarise(optimize_res = optimize(likelihood_function, interval = c(0,1), genoNormAD, DP, contAllele_fraction),
+              contPerCell_absolut = sum(genoNormAD) / sum(DP),
+              contPerCell_binom = optimize_res$minimum,
+              CI_low = CI_function(alpha=CI_alpha, genoNormAD, DP, contAllele_fraction, objective = optimize_res$objective, cont_binom = contPerCell_binom, direction = "lower"),
+              CI_high = CI_function(alpha=CI_alpha,genoNormAD, DP, contAllele_fraction, objective = optimize_res$objective, cont_binom = contPerCell_binom, direction = "upper"),
+              nSNP = length(DP)) %>% 
+    dplyr::select(-optimize_res) %>% distinct
+  
+  return(cont_frac)
+}  
+
+
+cont_frac_list <- list()
+for(rep in c("nuc3", "rep1", "rep2", "rep3", "nuc2")){
+  print(paste0("Calculating contamination fraction in ",rep))
+  cont_frac_list[[rep]] <- calculate_cont_perGeneCT_binom(rep, "Slc34a1", CI_alpha = 0.1)
+}
+
+cont_frac_df <- bind_rows(cont_frac_list, .id = "replicate") %>% 
+  filter(!is.na(category)) %>% 
+  mutate(celltype = case_when(category == "within_celltype" ~ "PT cells", 
+                              category == "within_others" ~ "other"),
+        replicate = factor(replicate, levels = c("rep3","rep1","rep2", "nuc3", "nuc2")),
+        celltype = factor(celltype, levels = c("PT cells", "other")))
+
+
+p.cont_frac <- ggplot(cont_frac_df, aes(x = replicate, y = 100*contPerCell_binom, fill = celltype))+
+    geom_col(position = "dodge", color = "black")+
+    geom_errorbar(aes(ymin = 100*CI_low, ymax = 100*CI_high), width = 0.2, position = position_dodge(width = 0.9))+
+    scale_fill_manual(values = c("lightgrey", "darkgrey"))+
+    theme_bw()+
+    theme(legend.position = "none", axis.title.x = element_blank())+
+    labs(y = "cont. frac. (%)")
+
+p.cont_frac
+```
+
+
+
+
+```{r Slc34a1_figure, fig.width=7, fig.height=5}
+p.slc34a1 <- plot_grid(
+  #plot_grid(
+    p.UMAP_Slc34a1, 
+  #  NULL,rel_heights = c(1,0.1), nrow = 2
+  #),
+  plot_grid(
+    p.lfc_Slc34a1, #+ theme(axis.text.x = element_blank()),
+    p.expr_frac_Slc34a1, #+theme(axis.text.x = element_blank()),
+    p.cont_frac,
+    get_legend(p.cont_frac+theme(legend.position = "bottom", legend.title = element_blank())),
+    nrow = 4, align = "hv", rel_heights = c(1,1,1,0.2), labels = c("B","C","D","")
+  ),
+  nrow = 1, rel_widths = c(1,0.6), labels = c("A")
+)
+p.slc34a1
+```
+
+
+## Multiple PT markers as heatmap
+
+### Heatmap summarizing metrics
+
+```{r marker_heatmap, fig.width=4.5, fig.height=6}
+DE_PT_markers <- DE %>% 
+  filter(gene %in% expression_fraction$gene) %>% 
+  group_by(gene) %>% 
+  mutate(mean_logFC = mean(avg_log2FC),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
+
+PT_markers_df <- inner_join(DE_PT_markers, expression_fraction) %>% 
+  group_by(gene) %>% 
+  mutate(mean_logFC = mean(avg_log2FC),
+         log_ratio = -log(expr_within_others / expr_within_celltype),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3", "nuc2")))
+
+#topGenes <- PT_markers_df %>% dplyr::select(gene, mean_logFC) %>% distinct() %>% arrange(desc(mean_logFC)) %>%  pull(gene) %>% .[1:30]
+
+# load top genes obtained by sorting by average exression in benchmark_comparison script
+topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
+
+
+PT_markers_top <- PT_markers_df %>% filter(gene %in% topGenes)
+
+p.heat <- plot_grid(
+  # log fold change
+    ggplot(PT_markers_top, aes(x = replicate, y = reorder(gene, mean_logFC), fill = logFC))+
+      geom_tile()+
+      theme_bw()+
+      scale_fill_gradient(low = "white", high = "darkgreen")+
+      scale_x_discrete(position = "top")+ 
+      theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+            legend.box.margin=margin(-10,-10,-10,-10))+
+      guides(fill = guide_colorbar(title.position = "top",
+                                   title = "logFC (PT vs other)")),
+    
+    ggplot(PT_markers_top, aes(x = replicate, y = reorder(gene, mean_logFC), fill = log_ratio))+
+      geom_tile()+
+      theme_bw()+
+      scale_fill_gradient(low = "white", high = "purple")+
+      scale_x_discrete(position = "top")+ 
+      theme(legend.position = "top", axis.text.y = element_blank(), axis.title = element_blank(), axis.ticks.y = element_blank(),
+            legend.box.margin=margin(-10,-10,-10,-10))+
+      guides(fill = guide_colorbar(title.position = "top",
+                                   title = "-log(frac(other) / frac(PT))")),
+    
+    nrow = 1, rel_widths = c(1,0.8)
+)
+
+
+
+head(PT_markers_top)
+
+p.box <- plot_grid(
+  NULL,
+  ggplot(PT_markers_top, aes(x = replicate, y = logFC))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.8, outlier.size = 0.5)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "logFC")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+    ggplot(PT_markers_top, aes(x = replicate, y = log_ratio))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.8, outlier.size = 0.5)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "-log(expr ratio)")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  nrow = 1, rel_widths = c(0.2,1,1)
+)
+
+
+p.box2 <- plot_grid(
+  ggplot(PT_markers_top, aes(x = replicate, y = avg_log2FC))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.8, outlier.size = 0.5)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "logFC (PT vs other)")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title.x = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+    ggplot(PT_markers_top, aes(x = replicate, y = log_ratio))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.8, outlier.size = 0.5)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "-log(frac(other) / frac(PT))")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title.x = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  nrow = 2, rel_heights = c(1,1), labels = c("F","G")
+)
+p.box2
+
+
+p.TopMarkers_heatmap <- plot_grid(p.heat, p.box,
+          nrow = 2, rel_heights = c(1,0.3))
+
+p.TopMarkers_heatmap
+```
+
+### Heatmap summarizing expression
+
+
+```{r expr_heatmap}
+seu_list_CAST <- list()
+for(rep in c("rep1", "rep2", "rep3", "nuc2","nuc3")){
+  seu_list_CAST[[rep]] <- readRDS(paste0("Snakemake_backup/input/",rep,"/seurat_CAST.RDS"))
+}
+
+ave_expr_df <- lapply(seu_list_CAST, function(x){
+  AverageExpression(x, assays = "RNA", slot = "data", features = PT_markers_top$gene, group.by = "celltype")$RNA %>% 
+      #t() %>% scale() %>% t() %>%  
+      data.frame() %>% 
+      rownames_to_column("gene") %>% 
+      pivot_longer(cols = -gene, values_to = "avg_expr", names_to = "celltype")
+}) %>% bind_rows(.id = "replicate")
+
+seurat_rep3_CAST <- readRDS("Snakemake_backup/input/rep3/seurat_CAST.RDS")
+
+ave_expr <- AverageExpression(seurat_rep3_CAST, assays = "RNA", features = PT_markers_top$gene, group.by = "celltype")$RNA %>% 
+  data.frame() %>% 
+  rownames_to_column("gene") %>% 
+  pivot_longer(cols = -gene, values_to = "avg_expr", names_to = "celltype")
+
+ave_expr
+
+
+
+
+ave_expr_df %>% 
+  filter(celltype %in% c("PT", "aLOH", "CD_PC", "Endo", "CD_IC")) %>% 
+  group_by(gene) %>% 
+  mutate(scaled_expr = scale(avg_expr)) %>% 
+
+  ggplot(aes(x = celltype, y = gene, fill = scaled_expr))+
+        geom_tile()+
+        facet_grid(~replicate)+
+        theme_bw()+
+        scale_fill_gradient(low = "white", high = "darkgreen")+
+        scale_x_discrete(position = "top")+ 
+        theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10))
+
+
+expr_frac_df 
+
+
+
+## Tidyseurat code
+ave_expr_df <- lapply(seu_list_CAST, function(x){
+  x %>% 
+  join_transcripts(panglao_LOH) %>% 
+  group_by(celltype, transcript) %>% 
+  summarize(expr_frac = sum(abundance_RNA > 0) / length(abundance_RNA),
+            avg_expr = mean(abundance_RNA))
+}) %>% bind_rows(.id = "replicate")
+
+ave_expr_df %>% 
+  filter(celltype %in% c("PT", "aLOH", "CD_PC", "Endo", "CD_IC")) %>% 
+  #group_by(transcript) %>% 
+  #mutate(scaled_expr = scale(avg_expr)) %>% 
+
+  ggplot(aes(x = celltype, y = transcript, color = avg_expr, size = expr_frac))+
+        geom_point()+
+        facet_grid(~replicate)+
+        theme_bw()+
+        scale_color_gradient(low = "white", high = "darkgreen")+
+        scale_x_discrete(position = "top")+ 
+        theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10))
+
+```
+
+```{r clark_markers, fig.width=4, fig.height=5}
+clark_markers <- list(
+  PT = c("Gsta2","Agxt2","Cyp2e1","Cryl1","Glyat","Sord","Pdzk1","Upb1","Sod3","Hnf4a"),
+  # thin ascending limb
+  #aLOH_thin = c("Nrgn","Rnf182","Pcsk9","Dram1","Mir24-2","Arc","Nek6","Cdkn1c","Calcrl","Clcnka"),
+  # thick ascending limb
+  aLOH = c("Umod","Slc12a1","Smarcd3","Kcnt1","Ptgs2","Irx2","Ppp1r1b","Lipg","Tnni1","Lrrc66","Igf1"),
+  Endo = c("Adgrl4","Emcn","Eng","Pecam1","Plac8","Plvap","Tek","Tspan8","Kdr","Ets1"),
+  CD_PC = c("Acer2","Aqp2","Aqp3","Aqp4","Avpr2","Fxyd4","Fzd1","Gata3","Lgals3","Ptges","Stc1","Tmem45b","Tspan1"),
+  CD_IC = c("Aqp6","Dmrt2","P2ry14","Slc4a1",
+            "Ap1s3","Insrr","Slc26a4")) %>% 
+  stack() %>% 
+  dplyr::rename("transcript" = "values", "marker_for" = "ind")
+
+
+ave_expr_df <- lapply(seu_list_CAST, function(x){
+  x %>% 
+  join_transcripts(clark_markers$transcript) %>% 
+  group_by(celltype, transcript) %>% 
+  summarize(expr_frac = sum(abundance_RNA > 0) / length(abundance_RNA),
+            avg_expr = mean(abundance_RNA))
+}) %>% bind_rows(.id = "replicate") %>% 
+  left_join(clark_markers)
+
+# dotplot
+ave_expr_df %>% 
+  filter(celltype %in% c("PT", "aLOH", "CD_PC", "Endo", "CD_IC")) %>% 
+  #group_by(transcript) %>% 
+  mutate(celltype = factor(celltype, levels = c("PT", "aLOH", "CD_PC", "Endo", "CD_IC")),
+         marker_for = factor(marker_for, levels = c("PT", "aLOH", "CD_PC", "Endo", "CD_IC"))) %>% 
+
+  ggplot(aes(x = celltype, y = transcript, fill = avg_expr, size = expr_frac))+
+        geom_point(shape = 21)+
+        facet_grid(marker_for~replicate, scales = "free")+
+        theme_bw()+
+        scale_fill_gradient(low = "white", high = "darkgreen")+
+        scale_x_discrete(position = "top")+ 
+        theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10))
+
+# heatmap
+ave_expr_df %>% 
+  filter(celltype %in% c("PT", "aLOH", "CD_PC", "Endo", "CD_IC")) %>% 
+  group_by(transcript) %>% 
+  mutate(celltype = factor(celltype, levels = c("PT", "aLOH", "CD_PC", "CD_IC", "Endo")),
+         marker_for = factor(marker_for, levels = c("PT", "aLOH", "CD_PC", "CD_IC", "Endo")),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2")),
+         scaled_expr = scale(avg_expr)) %>%
+
+  ggplot(aes(x = celltype, y = transcript, fill = scaled_expr))+
+        geom_tile()+
+        facet_grid(marker_for~replicate, scales = "free")+
+        theme_bw()+
+        scale_fill_gradient(low = "white", high = "darkgreen")+
+        scale_x_discrete(position = "top")+ 
+        theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10))
+
+SetIdent(seu_list_CAST$rep1, value = "celltype") %>% 
+  subset(downsample = 100) %>% 
+  DoHeatmap(features = clark_markers$transcript)
+
+
+# Identify top markers
+DE_seurat <- lapply(seu_list_CAST, function(x){
+  FindAllMarkers(SetIdent(x, value = "celltype"), features = clark_markers$transcript)
+}) %>% bind_rows(.id = "replicate")
+
+bla <- DE_seurat %>% 
+  left_join(clark_markers, by = c("gene" =  "transcript")) %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2"))) %>% 
+  filter(as.character(cluster) == as.character(marker_for))
+
+ggplot(bla, aes(x = replicate, y = avg_log2FC))+
+  geom_quasirandom()+
+  geom_boxplot()+
+  facet_grid(~marker_for)+
+  theme_bw()
+
+
+### Per cell heatmap ####
+cell_expr_df <- lapply(seu_list_CAST, function(x){
+  x %>% 
+    SetIdent(value = "celltype") %>% 
+    subset(downsample = 100) %>% 
+  join_transcripts(clark_markers$transcript)
+}) %>% bind_rows(.id = "replicate") %>% 
+  left_join(clark_markers)
+
+
+
+cell_expr_df %>% 
+  filter(celltype %in% c("PT", "aLOH", "CD_PC", "Endo", "CD_IC"),
+         replicate == "rep2") %>% 
+  mutate(celltype = factor(celltype, levels = c("PT", "aLOH", "CD_PC", "CD_IC", "Endo")),
+         marker_for = factor(marker_for, levels = c("PT", "aLOH", "CD_PC", "CD_IC", "Endo")),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2"))) %>%
+
+  ggplot(aes(x = cell, y = transcript, fill = abundance_RNA))+
+        geom_tile()+
+        facet_grid(marker_for~celltype, scales = "free", space = "free_x")+
+        theme_bw()+
+        scale_fill_gradient(low = "lightgrey", high = "red")+
+        scale_x_discrete(position = "top")+ 
+        theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+
+```
+
+### Heatmap Panglao multiple cell types
+
+```{r panglao_markers}
+panglao <- read_tsv("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/files/PanglaoDB_markers_27_Mar_2020.tsv")
+
+mouse_human_1to1 <- readRDS("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/files/mouse_human_1to1.RDS")
+
+mouse_gtf <- rtracklayer::import.gff("/data/ngs/genomes/Mouse/mm10/Mus_musculus.GRCm38.89.chr.gtf")
+human_gtf <- rtracklayer::import.gff("/data/ngs/genomes/Human/hg38/GENCODE_release_35/gencode.v35.primary_assembly.annotation.gtf")
+
+mouse_genes <- mouse_gtf %>% data.frame %>% dplyr::select(gene_id, gene_name) %>% unique %>% dplyr::rename("Mm_SYMBOL" = "gene_name")
+human_genes <- human_gtf %>% data.frame %>% dplyr::select(gene_id, gene_name) %>% unique %>% dplyr::rename("Hs_SYMBOL" = "gene_name")
+human_genes$gene_id <- gsub("\\..*","",human_genes$gene_id)
+
+gene_anno <- mouse_human_1to1 %>% 
+  left_join(mouse_genes, by = c("mmusculus_homolog_ensembl_gene" = "gene_id")) %>% 
+  left_join(human_genes, by = c("ensembl_gene_id" = "gene_id"))
+
+panglao_markers <- panglao %>% 
+  left_join(gene_anno, by = c("official gene symbol" = "Hs_SYMBOL"))
+
+panglao_LOH <- panglao_markers %>% filter(`cell type` == "Loop of Henle cells") %>% pull(Mm_SYMBOL) %>% .[!is.na(.)]
+
+
+
+
+cell_expr_df <- lapply(seu_list_CAST, function(x){
+  x %>% 
+    SetIdent(value = "celltype") %>% 
+    subset(downsample = 100) %>% 
+  join_transcripts(panglao_markers$Mm_SYMBOL)
+}) %>% bind_rows(.id = "replicate") %>% 
+  left_join(panglao_markers, by = c("transcript" = "Mm_SYMBOL"))
+
+
+
+cell_expr_df_inp <- cell_expr_df %>% 
+  filter(celltype %in% c("PT", "CD_PC","CD_IC","Endo"),
+         replicate == "rep2",
+         `cell type` %in% c("Principal cells", "Proximal tubule cells", "Intercalated cells", "Endothelial cells"),
+         #sensitivity_mouse > 0.3, 
+          specificity_mouse < 0.1, 
+         `canonical marker` == 1) %>% 
+  mutate(celltype = factor(celltype, levels = c("PT", "CD_PC", "CD_IC", "Endo")),
+         marker_for = case_when(`cell type` == "Proximal tubule cells" ~ "PT",
+                                `cell type` == "Principal cells" ~ "CD_PC",
+                                `cell type` == "Intercalated cells" ~ "CD_IC",
+                                `cell type` == "Endothelial cells" ~ "Endo"),
+         #replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2")),
+         #marker_for = factor(`cell type`, levels = c("Proximal tubule cells","Principal cells",  "Intercalated cells", "Endothelial cells")),
+         marker_for = factor(marker_for, levels = c("PT", "CD_PC", "CD_IC", "Endo"))) %>%
+  
+  group_by(transcript) %>% 
+  mutate(endo_expr_frac = sum(abundance_RNA[celltype == marker_for] > 0) / sum(celltype == marker_for)) %>% 
+  filter(endo_expr_frac > 0.7)
+
+p.cell_heatmap <- ggplot(cell_expr_df_inp, aes(x = cell, y = reorder(transcript, endo_expr_frac), fill = abundance_RNA))+
+        geom_tile()+
+        facet_grid(marker_for~celltype, scales = "free", space = "free")+
+        theme_bw()+
+        scale_fill_gradient(low = "lightgrey", high = "red")+
+        scale_x_discrete(position = "top")+ 
+        labs(fill = "normalized expression")+
+        theme(legend.position = "bottom", axis.text.y = element_text(size = 5), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+              strip.text.y = element_blank(),
+              strip.background.y =  element_blank(), strip.background.x = element_rect(fill = "white"))
+
+p.cell_heatmap
+```
+
+#### Heatmap for all replicates
+
+```{r heatmap_replicates}
+plot_marker_heatmap <- function(rep){
+  cell_expr_df_inp <- cell_expr_df %>% 
+  filter(celltype %in% c("PT", "CD_PC","CD_IC","Endo"),
+         replicate == rep,
+         `cell type` %in% c("Principal cells", "Proximal tubule cells", "Intercalated cells", "Endothelial cells"),
+         #sensitivity_mouse > 0.3, 
+          specificity_mouse < 0.1, 
+         `canonical marker` == 1) %>% 
+  mutate(celltype = factor(celltype, levels = c("PT", "CD_PC", "CD_IC", "Endo")),
+         marker_for = case_when(`cell type` == "Proximal tubule cells" ~ "PT",
+                                `cell type` == "Principal cells" ~ "CD_PC",
+                                `cell type` == "Intercalated cells" ~ "CD_IC",
+                                `cell type` == "Endothelial cells" ~ "Endo"),
+         #replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2")),
+         #marker_for = factor(`cell type`, levels = c("Proximal tubule cells","Principal cells",  "Intercalated cells", "Endothelial cells")),
+         marker_for = factor(marker_for, levels = c("PT", "CD_PC", "CD_IC", "Endo"))) %>%
+  
+  group_by(transcript) %>% 
+  mutate(endo_expr_frac = sum(abundance_RNA[celltype == marker_for] > 0) / sum(celltype == marker_for)) %>% 
+  filter(endo_expr_frac > 0.5)
+
+p.cell_heatmap <- ggplot(cell_expr_df_inp, aes(x = cell, y = reorder(transcript, endo_expr_frac), fill = abundance_RNA))+
+        geom_tile()+
+        facet_grid(marker_for~celltype, scales = "free", space = "free_y")+
+        theme_bw()+
+        scale_fill_gradient(low = "lightgrey", high = "red")+
+        scale_x_discrete(position = "top")+ 
+        labs(fill = "normalized expression")+
+        theme(legend.position = "bottom", axis.text.y = element_text(size = 5), axis.title = element_blank(),
+              legend.box.margin=margin(-10,-10,-10,-10), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+              strip.text.y = element_blank(),
+              strip.background.y =  element_blank(), strip.background.x = element_rect(fill = "white"))+
+        ggtitle(rep)
+
+return(p.cell_heatmap)
+}
+
+marker_heatmap_list <- lapply(setNames(c("rep1","rep2","rep3","nuc2"),c("rep1","rep2","rep3","nuc2")),plot_marker_heatmap)
+
+p.marker_heatmap_replicates <- plot_grid(plotlist = marker_heatmap_list)
+
+#ggsave("figures/Suppl_figure_Heatmap_replicates.pdf", p.marker_heatmap_replicates, width = 10, height = 7)
+ggsave("figures/Suppl_figure_Heatmap_replicates_new.pdf", p.marker_heatmap_replicates, width = 10, height = 10)
+```
+
+
+
+## Assemble Figure
+
+With cell heatmap: 
+
+```{r assemble_figure, fig.width=13, fig.height=5}
+p.figure3 <- plot_grid(p.slc34a1, 
+                       p.cell_heatmap, 
+                       p.box2,
+                       nrow = 1, rel_widths = c(1,0.7, 0.4), labels = c("","E",""))
+p.figure3
+
+ggsave("figures/Figure3.pdf", p.figure3, height = 5, width = 13)
+```
+
+With heatmaps of DE metrics: 
+
+```{r assemble_figure2, fig.height=5, fig.width=11}
+p.figure3 <- plot_grid(p.slc34a1, p.TopMarkers_heatmap, nrow = 1, rel_widths = c(1,0.6), labels = c("","E"))
+p.figure3
+ggsave("figures/Figure3.pdf", p.figure3, height = 5, width = 11)
+```
+
+
+
+## Multiple PT marker genes
+
+```{r PT_markers, fig.height=6, fig.width=11}
+DE_PT_markers <- DE %>% 
+  filter(gene %in% expression_fraction$gene) %>% 
+  group_by(gene) %>% 
+  mutate(mean_logFC = mean(logFC),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
+
+
+p.PT_DE <- plot_grid(
+  ggplot(DE_PT_markers, aes(x = reorder(gene, -mean_logFC), y = logFC))+
+      geom_point(aes(color = replicate), alpha = 0.8, size = 2)+
+      scale_color_manual(values = replicate_colors)+
+      labs(y = "logFC", x= "")+
+      theme_bw()+
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 7),
+            legend.position = "none"),
+
+  ggplot(DE_PT_markers, aes(x = replicate, y = logFC))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.7, outlier.colour = NA)+
+      scale_fill_manual(values = replicate_colors)+
+      theme_bw()+
+      theme(legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  DE_PT_markers %>% 
+  mutate(logFC_residual = logFC - mean_logFC) %>% 
+  ggplot(aes(x = replicate, y = logFC_residual))+
+      #ggbeeswarm::geom_quasirandom(aes(color = replicate), alpha = 1)+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.7, outlier.colour = NA)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "residuals")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title.x = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  nrow = 1, rel_widths = c(1,0.3,0.35), align = "h"
+)
+
+
+expression_fraction <- expression_fraction %>% 
+  group_by(gene) %>% 
+  mutate(mean_expr_others = mean(expr_within_others),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc2"))) 
+
+p.PT_expr_frac <- plot_grid(
+  ggplot(expression_fraction, aes(x = reorder(gene, -mean_expr_others), y = expr_within_others))+
+      geom_point(aes(color = replicate), alpha = 0.8, size = 2)+
+      scale_color_manual(values = replicate_colors)+
+      labs(y = "Expression fraction in non PT cells", x= "")+
+      theme_bw()+
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 7),
+            legend.position = "none"),
+
+  ggplot(expression_fraction, aes(x = replicate, y = expr_within_others))+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.7, outlier.colour = NA)+
+      scale_fill_manual(values = replicate_colors)+
+      theme_bw()+
+      theme(legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  expression_fraction %>% 
+  mutate(expr_within_others_residual = expr_within_others - mean_expr_others) %>% 
+  ggplot(aes(x = replicate, y = expr_within_others_residual))+
+      #ggbeeswarm::geom_quasirandom(aes(color = replicate), alpha = 1)+
+      geom_boxplot(aes(fill = replicate), color = "black", alpha = 0.7, outlier.colour = NA)+
+      scale_fill_manual(values = replicate_colors)+
+      labs(y = "residuals")+
+      theme_bw()+
+      theme(legend.position = "none", axis.title.x = element_blank(),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)),
+  
+  nrow = 1, rel_widths = c(1,0.3,0.35), align = "h"
+)
+
+
+
+plot_grid(p.PT_DE, 
+          p.PT_expr_frac, 
+          nrow = 2)
+
+```

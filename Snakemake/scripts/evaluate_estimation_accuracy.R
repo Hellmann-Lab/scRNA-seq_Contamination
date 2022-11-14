@@ -3,7 +3,7 @@ args <- commandArgs(TRUE)
 library(tidyverse)
 
 evaluate_estimation_accuracy <- function(corrected_dir, genotype_estimate, estimation_accuracy){
-  CpC_gt <- readRDS(genotype_estimate)
+  CpC_gt <- readRDS(paste0(genotype_estimate, "/perCell_noMito_CAST_binom.RDS"))
   
   eval_list <- list()
   for(param in list.files(corrected_dir, pattern = "_contPerCell.RDS")){

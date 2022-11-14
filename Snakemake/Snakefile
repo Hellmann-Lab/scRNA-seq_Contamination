@@ -1,18 +1,18 @@
 configfile: "config.yml" 
 
-workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake"
+workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake_backup"
 
 rule all:
   input: 
       ###### PRE-PROCESSING ##################################################
       expand("input/{dataset}/cell_BC.txt", dataset = config["dataset"]),
-      #expand("input/{dataset}/top75k_BC.txt", dataset = config["dataset"]),
+      expand("input/{dataset}/top75k_BC.txt", dataset = config["dataset"]),
       #expand("plots/{dataset}/UMI_curve.pdf", dataset = config["dataset"]),
       
       ###### GENOTYPING ######################################################
       #expand("genotyping/{dataset}/cellSNP", dataset = config["dataset"]),
-      #expand("genotyping/{dataset}/vireo/vireo_out", dataset = config["dataset"]),
-      #expand("genotyping/{dataset}/vireo/vireo_ref.vcf", dataset = config["dataset"]),
+      expand("genotyping/{dataset}/vireo/vireo_out", dataset = config["dataset"]),
+      expand("genotyping/{dataset}/vireo/vireo_ref.vcf", dataset = config["dataset"]),
       
       ###### GENOTYPE ESTIMATION #############################################
       expand("genotype_estimation/{dataset}", dataset = config["dataset"]),
@@ -25,23 +25,31 @@ rule all:
       
       ###### CORRECTION WITH DIFFERENT METHODS ###############################
       expand("benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_cormat.RDS", dataset = config["dataset"], cluster_res = config["cluster_res"], use_empty = config["use_empty"]),
-      expand("benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_cormat.RDS", dataset = config["dataset"], cluster_res = config["cluster_res"], set_cont = config["set_cont"]),
+      #expand("benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_cormat.RDS", dataset = config["dataset"], cluster_res = config["cluster_res"], set_cont = config["set_cont"]),
       expand("benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_cormat.RDS", dataset = config["dataset"], fpr = config["fpr"], total_droplets_included = config["total_droplets_included"]),
+      #expand("benchmark/corrected/{method_no_raw}/{dataset}", method_no_raw = config["method_no_raw"], dataset = config["dataset"]),
       
       ###### EVALUATION OF CORRECTION #########################################
-      expand("benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS", dataset = config["dataset"], method = config["method"]),
-      expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS", dataset = config["dataset"], method = config["method"]),
-      expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS", dataset = config["dataset"], method = config["method"])
+      expand("benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS", dataset = config["dataset"], method = config["method_no_raw"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/silhouette_per_cell.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external_cor.RDS",dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/classification_evaluation.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/expression_fraction_PT_markers.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/differential_expression3.RDS", dataset = config["dataset"], method = config["method"]),
+      expand("benchmark/evaluation/{method}/{dataset}/differential_expression_seurat.RDS", dataset = config["dataset"], method = config["method"]),
+      #expand("benchmark/evaluation/{method}/{dataset}/kNN_overlap.RDS", dataset = config["dataset"], method = config["method"])
 
 rule call_cells:
   input: 
-      cellranger = "input/{dataset}/cellranger"
+      cellranger = ancient("input/{dataset}/cellranger")
   output: 
        cell_BC = "input/{dataset}/cell_BC.txt",
        top75k_BC = "input/{dataset}/top75k_BC.txt",
        UMI_curve = "plots/{dataset}/UMI_curve.pdf"
   shell: 
-      "Rscript scripts/call_cells.R {input.cellranger} {output.cell_BC} {output.top75k_BC} {output.UMI_curve}"
+      "/opt/bin/Rscript scripts/call_cells.R {input.cellranger} {output.cell_BC} {output.top75k_BC} {output.UMI_curve}"
       
 #rule cellSNP:
 #  input:
@@ -69,11 +77,11 @@ rule genotype_estimation:
   output: 
       genotype_estimation_dir = directory("genotype_estimation/{dataset}")
   shell: 
-      "Rscript scripts/genotype_estimation.R {input.cellSNP_dir} {input.vireo_dir} {input.vireo_vcf} {output.genotype_estimation_dir}"
+      "/opt/bin/Rscript scripts/genotype_estimation.R {input.cellSNP_dir} {input.vireo_dir} {input.vireo_vcf} {output.genotype_estimation_dir}"
       
 rule celltype_classification:
   input: 
-      cellranger = "input/{dataset}/cellranger",
+      cellranger = ancient("input/{dataset}/cellranger"),
       cell_BC = "input/{dataset}/cell_BC.txt",
       vireo_dir = "genotyping/{dataset}/vireo/vireo_out"
   output: 
@@ -81,12 +89,12 @@ rule celltype_classification:
       celltype_assignment = "classification/{dataset}/celltype_assignment.RDS",
       UMAP_celltype = "classification/{dataset}/UMAP_celltype.pdf"
   shell: 
-      "Rscript scripts/celltype_classification.R {input.cellranger} {input.cell_BC} {input.vireo_dir} {output.prediction_results} {output.celltype_assignment} {output.UMAP_celltype}"
+      "/opt/bin/Rscript scripts/celltype_classification.R {input.cellranger} {input.cell_BC} {input.vireo_dir} {output.prediction_results} {output.celltype_assignment} {output.UMAP_celltype}"
       
       
 rule filtering_and_preprocessing:
   input:
-      cellranger = "input/{dataset}/cellranger",
+      cellranger = ancient("input/{dataset}/cellranger"),
       vireo_dir = "genotyping/{dataset}/vireo/vireo_out",
       celltype_assignment = "classification/{dataset}/celltype_assignment.RDS",
       genotype_estimation_dir = "genotype_estimation/{dataset}"
@@ -97,12 +105,12 @@ rule filtering_and_preprocessing:
   params: 
       cluster_res = ",".join(expand("{cluster_res}", cluster_res = config["cluster_res"]))
   shell: 
-      "Rscript scripts/filtering_and_preprocessing.R {input.cellranger} {input.vireo_dir} {input.celltype_assignment} {input.genotype_estimation_dir} {params.cluster_res} {output.seurat_out} {output.seurat_CAST_out} {output.raw_matrix}"
+      "/opt/bin/Rscript scripts/filtering_and_preprocessing.R {input.cellranger} {input.vireo_dir} {input.celltype_assignment} {input.genotype_estimation_dir} {params.cluster_res} {output.seurat_out} {output.seurat_CAST_out} {output.raw_matrix}"
       
 ### METHOD COMPARISON ###
 rule DecontX:
   input: 
-      cellranger = "input/{dataset}/cellranger",
+      cellranger = ancient("input/{dataset}/cellranger"),
       seurat = "input/{dataset}/seurat.RDS"
   params:
       cluster_res = "{cluster_res}",
@@ -111,11 +119,11 @@ rule DecontX:
       cormat = "benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_cormat.RDS",
       perCell = "benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_contPerCell.RDS"
   shell:
-      "Rscript scripts/run_DecontX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.use_empty} {output.cormat} {output.perCell}"
+      "/opt/bin/Rscript scripts/run_DecontX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.use_empty} {output.cormat} {output.perCell}"
       
 rule SoupX:
   input: 
-      cellranger = "input/{dataset}/cellranger",
+      cellranger = ancient("input/{dataset}/cellranger"),
       seurat = "input/{dataset}/seurat.RDS"
   params:
       cluster_res = "{cluster_res}",
@@ -124,11 +132,11 @@ rule SoupX:
       cormat = "benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_cormat.RDS",
       perCell = "benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_contPerCell.RDS"     
   shell:
-      "Rscript scripts/run_SoupX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.set_cont} {output.cormat} {output.perCell}"
+      "/opt/bin/Rscript scripts/run_SoupX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.set_cont} {output.cormat} {output.perCell}"
       
 rule CellBender: 
   input: 
-      cellranger = "input/{dataset}/cellranger",
+      cellranger = ancient("input/{dataset}/cellranger"),
       seurat = "input/{dataset}/seurat.RDS"
   params: 
       total_droplets_included = "{total_droplets_included}",
@@ -139,16 +147,16 @@ rule CellBender:
       cormat = "benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_cormat.RDS",
       perCell = "benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_contPerCell.RDS"
   shell:
-      "Rscript scripts/run_CellBender.R {input.cellranger} {input.seurat} {params.total_droplets_included} {params.fpr} {output.CB_out} {output.cormat} {output.perCell}"
+      "/opt/bin/Rscript scripts/run_CellBender.R {input.cellranger} {input.seurat} {params.total_droplets_included} {params.fpr} {output.CB_out} {output.cormat} {output.perCell}"
       
 rule evaluate_estimation_accuracy:
   input:
-      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
-      genotype_estimate = "genotype_estimation/{dataset}/perCell_noMito_CAST_binom.RDS"
+      corrected_dir = "benchmark/corrected/{method_no_raw}/{dataset}",
+      genotype_estimation_dir = "genotype_estimation/{dataset}",
   output: 
-      estimation_accuracy = "benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS"
+      estimation_accuracy = "benchmark/evaluation/{method_no_raw}/{dataset}/estimation_accuracy.RDS"
   shell: 
-      "Rscript scripts/evaluate_estimation_accuracy.R {input.corrected_dir} {input.genotype_estimate} {output.estimation_accuracy}"
+      "/opt/bin/Rscript scripts/evaluate_estimation_accuracy.R {input.corrected_dir} {input.genotype_estimation_dir} {output.estimation_accuracy}"
       
 rule evaluate_clustering:
   input:
@@ -156,7 +164,57 @@ rule evaluate_clustering:
       seurat = "input/{dataset}/seurat.RDS"
   output: 
       cluster_evaluation_external = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS",
-      cluster_evaluation_internal = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS"
+      cluster_evaluation_internal = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS",
+      silhouette_per_cell = "benchmark/evaluation/{method}/{dataset}/silhouette_per_cell.RDS",
+      classification_evaluation = "benchmark/evaluation/{method}/{dataset}/classification_evaluation.RDS"
   shell: 
-      "Rscript scripts/evaluate_clustering.R {input.corrected_dir} {input.seurat} {output.cluster_evaluation_external} {output.cluster_evaluation_internal}"
+      "/opt/bin/Rscript scripts/evaluate_clustering.R {input.corrected_dir} {input.seurat} {output.cluster_evaluation_external} {output.cluster_evaluation_internal} {output.silhouette_per_cell} {output.classification_evaluation}"
+      
+rule evaluate_clustering_cor:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
+      seurat = "input/{dataset}/seurat.RDS",
+      classification_evaluation = "benchmark/evaluation/{method}/{dataset}/classification_evaluation.RDS"
+  output: 
+      cluster_evaluation_external_cor = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external_cor.RDS",
+      cluster_evaluation_internal_cor = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal_cor.RDS",
+      silhouette_per_cell_cor = "benchmark/evaluation/{method}/{dataset}/silhouette_per_cell_cor.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_clustering_cor.R {input.corrected_dir} {input.seurat} {input.classification_evaluation} {output.cluster_evaluation_external_cor} {output.cluster_evaluation_internal_cor} {output.silhouette_per_cell_cor}"
+ 
+rule evaluate_expression_fraction:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+      expression_fraction_PT_markers = "benchmark/evaluation/{method}/{dataset}/expression_fraction_PT_markers.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_expression_fraction.R {input.corrected_dir} {input.seurat} {output.expression_fraction_PT_markers}"
+      
+rule evaluate_lfc:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+      differential_expression = "benchmark/evaluation/{method}/{dataset}/differential_expression3.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_DE.R {input.corrected_dir} {input.seurat} {output.differential_expression}"
+      
+rule evaluate_lfc_seurat:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+      differential_expression_seurat = "benchmark/evaluation/{method}/{dataset}/differential_expression_seurat.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_DE_seurat.R {input.corrected_dir} {input.seurat} {output.differential_expression_seurat}"
+      
+rule evaluate_kNN_overlap:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/",
+      reference_kNN = "input/{dataset}/kNN_reference.RDS"
+  output: 
+      kNN_overlap = "benchmark/evaluation/{method}/{dataset}/kNN_overlap.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_kNN_overlap.R {input.corrected_dir} {input.reference_kNN} {output.kNN_overlap}"
  

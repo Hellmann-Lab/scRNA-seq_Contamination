@@ -1,7 +1,7 @@
 #!/bin/bash
-workdir=/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake
+workdir=/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake_backup
 bam=$1/possorted_genome_bam.bam
-REGION_VCF=/data/share/htp/CZI_kidney/mouse_experiments/experiment1_data/cellSNP/reference_vcf/reference_3strains.vcf.gz
+REGION_VCF=/data/share/htp/CZI_kidney/mouse_experiments/experiment1_data/cellSNP/reference_vcf/reference_3strains_chr1to19.vcf.gz
 cellBCs=$2
 outdir=$3
 

@@ -1,8 +1,10 @@
 # run DecontX 
 args <- commandArgs(TRUE)
 
-library(celda) 
-
+suppressPackageStartupMessages(
+  library(celda, lib.loc = "/data/home/janssen/R/x86_64-pc-linux-gnu-library/4.1/") 
+)
+  
 run_DecontX <- function(cellranger, seurat, cluster_res, use_empty, cormat, perCell){
   # read seurat object as input
   seu <- readRDS(seurat)
@@ -15,9 +17,12 @@ run_DecontX <- function(cellranger, seurat, cluster_res, use_empty, cormat, perC
   }
   
   # Background profile
-  if(isTRUE(use_empty)){
-    raw <- Read10X_h5(paste0(cellranger, "/raw_feature_bc_matrix.h5"))
+  if(use_empty == "True"){
+    print("Using empty droplet profile")
+    raw <- Seurat::Read10X_h5(paste0(cellranger, "/raw_feature_bc_matrix.h5"))
+    raw <- raw[rownames(seu),]
   } else {
+    print(paste0("use_empty = ",use_empty, ": empty droplets not used"))
     raw = NULL
   }
   

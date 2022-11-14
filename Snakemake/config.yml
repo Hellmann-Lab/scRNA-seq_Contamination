@@ -1,21 +1,19 @@
-workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake"
+workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake_backup"
 
 # Input datasets
-#dataset: ["rep1"]
 dataset: ["rep1", "rep2", "rep3", "nuc2", "nuc3"]
 
 # Parameter settings for different correction methods
-cluster_res: [0.5,1,2]
-#cluster_res: ["Default",0.5,1,2]
+cluster_res: ["Default",0.5,1,2]
 
-use_empty: [TRUE, FALSE]
+use_empty: ["True", "False"]
 
 set_cont: ["Auto",0.05,0.1,0.2]
 
 total_droplets_included: [25000]
 
-fpr: ["0.01", "0.1"]
+fpr: ["0.01", "0.05", "0.1"]
 
 # Evaluation
-#method: ["DecontX", "SoupX"]
-method: ["DecontX", "SoupX", "CellBender"]
+method: ["DecontX", "SoupX", "CellBender", "raw"]
+method_no_raw: ["DecontX", "SoupX", "CellBender"]
