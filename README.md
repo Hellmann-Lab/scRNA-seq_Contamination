@@ -26,7 +26,10 @@ Beyond the standardized pipeline, we summarize results and perform further analy
 We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse strains (BL6, SVLMJ, CAST).
 
 -- single cell RNA-seq [rep1](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/rep1.zip?versionId=ea3978b8-87b9-4c07-83f4-60003d0ebd22)
-
+-- single cell RNA-seq [rep2](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/rep2.zip?versionId=be135ce4-d5ef-49bb-b43c-e6e1397fc78d)
+-- single cell RNA-seq [rep3](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/rep3.zip?versionId=12e2205c-62e0-4b24-bac8-f5761475a677)
+-- single nucleus RNA-seq [nuc2](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/nuc2.zip?versionId=36b4b26e-1084-4c8e-94c3-3b4c9f216652)
+-- single nucleus RNA-seq [nuc3](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/nuc3.zip?versionId=8fe8e9d4-b8c1-4937-8d27-b3ac4692ebc9)
 
 We provide files with cell type, strain and contaminaiton information in zip-folder, where each contains 5 files:
 
