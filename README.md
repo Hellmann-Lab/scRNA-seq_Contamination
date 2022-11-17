@@ -33,9 +33,9 @@ We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse 
 
 We provide files with cell type, strain and contaminaiton information in zip-folder, where each contains 5 files:
 
--**filtered_feature_bc_matrix.h5**
--**perCell_noMito_CAST_binom.RDS**
--**raw_feature_bc_matrix.h5**
--**seurat_CAST.RDS**
--**seurat.RDS**
+- **filtered_feature_bc_matrix.h5**
+- **perCell_noMito_CAST_binom.RDS**
+- **raw_feature_bc_matrix.h5**
+- **seurat_CAST.RDS**
+- **seurat.RDS**
 
