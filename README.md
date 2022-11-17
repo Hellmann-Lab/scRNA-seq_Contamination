@@ -21,3 +21,18 @@ Beyond the standardized pipeline, we summarize results and perform further analy
 - **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3).
 - **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4).
 - **05_06_benchmark_decontamination_methods**: Summarizing the method comparison results based on the Snakemake pipeline across datasets and parameter settings (related to Figure 5 & 6). 
+
+## Benchmark Data availability
+We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse strains (BL6, SVLMJ, CAST).
+
+-- single cell RNA-seq [rep1](https://zenodo.org/api/files/85576185-ca53-4d69-8205-0271a1f52150/rep1.zip?versionId=ea3978b8-87b9-4c07-83f4-60003d0ebd22)
+
+
+We provide files with cell type, strain and contaminaiton information in zip-folder, where each contains 5 files:
+
+--**filtered_feature_bc_matrix.h5**
+--**perCell_noMito_CAST_binom.RDS**
+--**raw_feature_bc_matrix.h5**
+--**seurat_CAST.RDS**
+--**seurat.RDS**
+
