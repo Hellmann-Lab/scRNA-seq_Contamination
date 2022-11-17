@@ -1,7 +1,6 @@
-# scRNA-seq background RNA
+# The effect of background noise and its removal on the analysis of single-cell expression data
 
-This repository contains the necessary code to reproduce the analysis for the manuscript **"The effect of background noise and its removal on
-the analysis of single-cell expression data"**.
+This repository contains the necessary code to reproduce the analysis for the manuscript **"The effect of background noise and its removal on the analysis of single-cell expression data"**.
 
 ## Snakemake
 
