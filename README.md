@@ -17,6 +17,8 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 ## Figure scripts
 
 Beyond the standardized pipeline, we summarize results and perform further analysis and create figures with regards to  
-- **dataset composition**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy. 
-- **origin of background RNA**: Comparison of endogenous expression, background RNA contamination and empty droplet profiles.
-- **method benchmark**: Summarizing the method comparison results across datasets and parameter settings. 
+- **01_dataset_description**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy (related to Figure 1). 
+- **02_per_cell_estimates**: Visualization of backround noise fractions per cell (related to Figure 2).
+- **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3).
+- **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4).
+- **05_06_benchmark_decontamination_methods**: Summarizing the method comparison results based on the Snakemake pipeline across datasets and parameter settings (related to Figure 5 & 6). 
