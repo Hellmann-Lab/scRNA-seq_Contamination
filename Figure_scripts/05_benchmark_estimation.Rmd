@@ -1,0 +1,154 @@
+---
+title: "Benchmark: Estimation accuracy"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(tidyverse)
+library(cowplot)
+library(ggh4x)
+
+method_colors2 = setNames(c("lightgrey", "lightgrey","#FF6F59", "#254441", "#43AA8B", "#9EEED2"),
+                         c("Genotype estimate", "raw", "CellBender", "SoupX", "DecontX_default", "DecontX_background"))
+
+replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey"), 
+                             c("rep1", "rep2", "rep3", "nuc2")) 
+
+denisenko_colors <- setNames(
+  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
+  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
+```
+
+
+## FIGURE 5: Estimation accuracy
+
+### Figure 5A: Global per cell estimation
+
+```{r estimation_accuracy}
+df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
+
+# **** Global estimates of background RNA per cell #####
+### Import per cell estimates of different methods
+perCell_methods <- list()
+for(rep in c("rep1", "rep2","rep3", "nuc2", "nuc3")){ 
+  for(method in c("DecontX", "SoupX", "CellBender")){
+    for(param in gsub("_contPerCell.RDS", "", list.files(paste0("Snakemake_backup/benchmark/corrected/",method,"/",rep), pattern = "_contPerCell"))){
+      perCell_methods[[rep]][[method]][[param]] <- readRDS(paste0("Snakemake_backup/benchmark/corrected/",method,"/",rep,"/",param,"_contPerCell.RDS"))
+      #perCell_methods[[rep]][[method]][[param]] <- bind_rows(perCell_methods[[rep]][[method]], .id = "parameters")
+    }
+    perCell_methods[[rep]][[method]] <- bind_rows(perCell_methods[[rep]][[method]], .id = "param")
+  }
+  method_est <- bind_rows(perCell_methods[[rep]], .id = "method")
+  gt_est <- readRDS(paste0("Snakemake_backup/genotype_estimation/",rep,"/perCell_noMito_CAST_binom.RDS")) %>% 
+    ungroup() %>% 
+    mutate(method = "Genotype estimate", replicate = rep, param = "Genotype estimate", cont = contPerCell_binom) %>% 
+    dplyr::select(method,replicate,param,cell,cont)
+  seurat <- readRDS(paste0("Snakemake_backup/input/",rep,"/seurat_CAST.RDS"))
+  
+  perCell_methods[[rep]] <- bind_rows(method_est, gt_est) %>% filter(cell %in% colnames(seurat))
+}
+
+perCell_methods_df <- perCell_methods %>% bind_rows(.id = "replicate") %>% 
+  left_join(dplyr::select(df_eval_metrics, c(method,param,default))) %>% 
+  mutate(method2 = case_when(method == "DecontX" & param == "resDefault_emptyFalse" ~ "DecontX_default",
+                            method == "DecontX" & param == "resDefault_emptyTrue" ~ "DecontX_background",
+                            T ~ method),
+         default = ifelse(method2 %in% c("DecontX_default", "DecontX_background"), T, default)) %>% 
+  filter(method == "Genotype estimate" | default == T) %>% 
+  filter(replicate %in% c("rep3", "rep1", "rep2","nuc2","nuc3")) %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc3", "nuc2")),
+         method2 = factor(method2, levels = c("Genotype estimate", "CellBender","SoupX", "DecontX_default", "DecontX_background"))) %>% 
+  distinct()
+
+
+p.global_est <- ggplot(perCell_methods_df, aes(x = replicate, y = 100*cont,fill = method2))+
+  geom_boxplot(outlier.color = NA)+
+  scale_fill_manual(values = method_colors2, limits = force)+
+  scale_y_continuous(limits = c(0,50))+
+  theme_bw()+
+  theme(axis.title.x = element_blank(), axis.text = element_text(size = 11),
+        legend.title = element_blank(), legend.justification = c(1,0))+
+  labs(y = "% background RNA per cell")
+
+#p.global_est
+```
+
+### Figure 5B: RMSLE and tau
+
+```{r est_metrics}
+df_estimation_metrics <- df_eval_metrics %>% 
+  filter(metric %in% c("rmsle", "tau"),
+         default == T) %>% 
+  select(-delta) %>% 
+  pivot_wider(names_from = "metric", values_from = "value")
+
+p.estimation_eval_metrics <- df_eval_metrics %>% 
+  filter(metric %in% c("rmsle", "tau"),
+         default == T) %>% 
+  mutate(metric = factor(metric, levels = c("rmsle","tau"),ordered = TRUE, labels=c("RMSLE", expression(paste("Kendall's ",tau)))),
+         replicate = factor(replicate, levels = rev(levels(replicate)))
+ ) %>% 
+ ggplot(aes(x = replicate, y = value, fill = method2))+
+    geom_jitter(shape = 21, size = 2.5, width = 0.05, alpha = 0.8)+
+    coord_flip()+
+    scale_fill_manual(values = method_colors2, limits = force)+
+    ggh4x::facet_grid2(~metric, scale = "free", labeller = label_parsed)+
+    ggh4x::facetted_pos_scales(y = list(metric == "RMSLE" ~ scale_y_reverse()))+
+    theme_bw()+
+    labs(y = "absolute values")+
+    #ggforestplot::theme_forest()+
+    #ggforestplot::geom_stripes(odd = "#33333333", even = "#00000000")#+
+    theme(axis.title = element_blank(), axis.text = element_text(size = 11), #axis.text.y = element_text(size = 11)
+          panel.spacing = unit(1.5, "lines"),
+          panel.grid.major.x = element_blank(),
+           panel.grid.major.y = element_line( size=5, color="grey90"))
+
+#p.estimation_eval_metrics
+```
+
+### Assemble Figure 5
+
+```{r fig_est, fig.width=5, fig.height=4.5}
+p.est_accuracy <- plot_grid(
+          plot_grid(NULL,p.global_est, nrow = 1, rel_widths = c(0.05,1)),
+          p.estimation_eval_metrics+theme(legend.position = "none"),
+          nrow = 2, labels = c("A","B"))
+
+p.est_accuracy
+
+#ggsave("figures/Figure5_estimation_accuracy.pdf",p.est_accuracy,  width = 5, height = 4.5)
+```
+
+
+## SUPPL. FIGURE 8: Estimation accuracy per cell type 
+
+```{r cont_per_celltype, fig.width=12, fig.height=3.5}
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+
+pC_est <- perCell_methods_df %>%  
+  left_join(cell_metadata) %>% 
+  filter(celltype %in% c("PT", "aLOH","DCT","Endo","CD_PC", "CD_IC")) %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc3", "nuc2")),
+         method2 = factor(method2, levels = c("Genotype estimate", "CellBender","SoupX", "DecontX_default", "DecontX_background")),
+         celltype = factor(celltype, levels = c("PT", "aLOH","DCT","Endo","CD_PC", "CD_IC")))
+
+
+p.est_per_celltype <- ggplot(pC_est, aes(x = method2, y= cont, fill = celltype))+
+  geom_boxplot(outlier.color = NA)+
+  scale_fill_manual(values = denisenko_colors, limits = force)+
+  facet_grid(~replicate)+
+  #scale_y_continuous(limits = c(0,0.5))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), 
+        axis.title.x = element_blank())+
+  labs(y = "% background RNA per cell")
+
+p.est_per_celltype
+
+#ggsave("figures/Suppl_figure_estimation_accuracy_perCT.pdf",p.est_per_celltype,  width = 12, height = 3.5)
+```

@@ -1,0 +1,596 @@
+---
+title: "Benchmark: downstream analysis"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(tidyverse)
+library(tidyseurat)
+library(cowplot)
+library(ggh4x)
+
+method_colors2 = setNames(c("lightgrey", "lightgrey","#FF6F59", "#254441", "#43AA8B", "#9EEED2"),
+                         c("Genotype estimate", "raw", "CellBender", "SoupX", "DecontX_default", "DecontX_background"))
+
+replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey"), 
+                             c("rep1", "rep2", "rep3", "nuc2")) 
+
+denisenko_colors <- setNames(
+  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
+  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
+```
+
+
+## FIGURE 6: EFFECT OF BACKGROUND REMOVAL ON DOWNSTREAM ANALYSIS
+
+### Figure 6A: UMAP with cell type annotation before and after correction
+
+```{r prepare_seurat}
+prepare_seurat <- function(rep){
+  cnt_mat_list <- list(uncorrected = readRDS(paste0("Snakemake_backup/benchmark/corrected/raw/",rep,"/raw_cormat.RDS")),
+                       CellBender = readRDS(paste0("Snakemake_backup/benchmark/corrected/CellBender/",rep,"/fpr0.01_total25000_cormat.RDS")),
+                       SoupX = readRDS(paste0("Snakemake_backup/benchmark/corrected/SoupX/",rep,"/res1_contAuto_cormat.RDS")),
+                       DecontX = readRDS(paste0("Snakemake_backup/benchmark/corrected/DecontX/",rep,"/resDefault_emptyFalse_cormat.RDS")))
+  
+  class_list <- list(uncorrected = readRDS(paste0("Snakemake_backup/benchmark/evaluation/raw/",rep,"/classification_evaluation.RDS"))$raw$celltype_labels,
+                     CellBender = readRDS(paste0("Snakemake_backup/benchmark/evaluation/CellBender/",rep,"/classification_evaluation.RDS"))$fpr0.01_total25000$celltype_labels,
+                     SoupX = readRDS(paste0("Snakemake_backup/benchmark/evaluation/SoupX/",rep,"/classification_evaluation.RDS"))$res1_contAuto$celltype_labels,
+                     DecontX = readRDS(paste0("Snakemake_backup/benchmark/evaluation/DecontX/",rep,"/classification_evaluation.RDS"))$resDefault_emptyFalse$celltype_labels)
+  
+  
+  seu_list <- lapply(setNames(names(cnt_mat_list), names(cnt_mat_list)), function(method){
+    mat_filt <- cnt_mat_list[[method]][,class_list[[method]]$cell]
+    seu <- CreateSeuratObject(mat_filt, meta.data = class_list[[method]] %>% column_to_rownames("cell"))
+    #seu <- filter(seu, !is.na(celltype))
+    seu <- NormalizeData(seu)
+    seu <- FindVariableFeatures(seu, nfeatures = 5000)
+    seu <- ScaleData(seu)
+    seu <- RunPCA(seu)
+    seu <- RunUMAP(seu, dims = 1:30)
+    seu <- seu %>% mutate(celltype = case_when(celltype %in% c("CD_IC","CD_IC_A","CD_IC_B") ~ "CD_IC",
+                                #celltype %in% c("aLOH","dLOH") ~ "LOH",
+                                celltype %in% c("T","NK","B","MPH") ~ "Immune",
+                                T ~ celltype))
+    return(seu)
+  })
+  
+  seu_list <- lapply(setNames(names(seu_list),names(seu_list)), function(x){
+    seu_list[[x]]$label_change = ifelse(seu_list[[x]]$celltype != seu_list$uncorrected$celltype,x,"same")
+    seu_list[[x]]$original_label = seu_list$uncorrected$celltype
+    return(seu_list[[x]])
+  })
+  
+  
+  seu_list$uncorrected$label_change <- case_when(
+    seu_list$uncorrected$celltype != seu_list$CellBender$celltype & seu_list$uncorrected$celltype != seu_list$DecontX$celltype ~ "multiple",
+    seu_list$uncorrected$celltype != seu_list$CellBender$celltype & seu_list$uncorrected$celltype != seu_list$SoupX$celltype ~ "multiple",
+    seu_list$uncorrected$celltype != seu_list$SoupX$celltype & seu_list$uncorrected$celltype != seu_list$DecontX$celltype ~ "multiple",
+    seu_list$uncorrected$celltype != seu_list$CellBender$celltype & seu_list$uncorrected$celltype != seu_list$SoupX$celltype & seu_list$uncorrected$celltype != seu_list$DecontX$celltype ~ "multiple",
+    seu_list$uncorrected$celltype != seu_list$CellBender$celltype ~ "CellBender",
+    seu_list$uncorrected$celltype != seu_list$SoupX$celltype ~ "SoupX",
+    seu_list$uncorrected$celltype != seu_list$DecontX$celltype ~ "DecontX",
+    T ~ "same"
+  )
+  
+  return(seu_list)
+}
+
+seu_list_rep1 <- prepare_seurat("rep1")
+seu_list_rep2 <- prepare_seurat("rep2")
+seu_list_rep3 <- prepare_seurat("rep3")
+seu_list_nuc2 <- prepare_seurat("nuc2")
+seu_list_nuc3 <- prepare_seurat("nuc3")
+
+```
+
+Plot UMAPs for replicate 2: 
+
+```{r plot_UMAPs_rep2}
+plot_UMAP <- function(seurat, color_by = "celltype", colors, plot_legend = F, name, highlight_label_change = T, add_caption = T){
+  p <- ggplot(filter(seurat, !is.na(celltype)), aes_string(x = "UMAP_1", y = "UMAP_2", color = color_by))+
+    geom_point(size = 0.1)+
+    scale_color_manual(values = colors)+
+    theme_bw()+
+    facet_grid(~as.character(name))+
+    theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
+          strip.text = element_text(size = 9))
+  
+  if(plot_legend == F){
+    p <- p+theme(legend.position = "none")
+  }
+  
+  if(highlight_label_change == T){
+    if(sum(seurat$label_change != "same", na.rm = T) > 0){
+      p <- p+geom_point(data = filter(as.tibble(seurat), label_change != "same"), mapping =  aes_string(x = "UMAP_1", y = "UMAP_2",fill = color_by, shape = "label_change"), size = 1.3, color = "black")+
+        scale_fill_manual(values = colors)+
+        scale_shape_manual(values = setNames(c(21,22,23,24),c("multiple", "CellBender","SoupX","DecontX")))
+    }
+  }
+  
+  if(add_caption == T){
+    n_reassigned <- sum(seurat$label_change != "same", na.rm = T)
+    frac_reassigned <- sum(seurat$label_change != "same", na.rm = T) / length(seurat$label_change)
+    label_reassigned <- paste0("reassigned: ", n_reassigned, " cells (",round(frac_reassigned*100,1),"%)")
+    if(name == "uncorrected"){label_reassigned = ""}
+    p <- p + labs(caption = label_reassigned)
+  }
+  
+  return(p)
+}
+
+p.UMAPs_ct <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), names(seu_list_rep2)),
+                            function(x){plot_UMAP(seu_list_rep2[[x]], colors = denisenko_colors,name = x)}),
+          nrow = 1)
+
+p.UMAPs_ct
+```
+
+### Figure 6B: UMAP with Slc34a1 expression before and after correction
+
+```{r UMAP_marker_rep2}
+plot_UMAP_marker <- function(seu, gene, name){
+  expr <- seu@assays$RNA@counts[gene,]
+  seu$log_expr <- log2(expr+1)
+  seu$log_expr <- ifelse(seu$log_expr > 6, 6, seu$log_expr)
+  
+  p.UMAP <- ggplot(filter(seu, !is.na(log_expr)), aes(x =UMAP_1, y = UMAP_2, color = log_expr))+
+      geom_point(size = 0.1)+
+      scale_color_continuous(low = "lightgrey", high = "red",limits = c(0,6))+
+      #scale_y_continuous(limits = c(-20,15))+
+      #annotate("text", x = 3, y = 8, label = "PT cells")+
+      theme_bw()+
+      facet_grid(~as.character(name))+
+      #ggtitle("Slc34a1 expression (rep 2)")+
+      labs(x = "UMAP 1", y = "UMAP 2", color = "log2(count+1)")+
+      theme(legend.position = "none", 
+            axis.text = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(),
+            strip.text = element_text(size = 10))
+  
+    if(sum(seu$label_change != "same", na.rm = T) > 0){
+      p.UMAP <- p.UMAP+geom_point(data = filter(as.tibble(seu), label_change != "same" & original_label == "PT"), mapping =  aes(fill = log_expr, shape = label_change), size = 1.3, color = "black")+
+        scale_shape_manual(values = setNames(c(21,22,23,24),c("multiple", "CellBender","SoupX","DecontX")))+
+        scale_fill_continuous(low = "lightgrey", high = "red",limits = c(0,6))
+    }
+  
+  return(p.UMAP)
+}
+
+p.UMAPs_marker <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), names(seu_list_rep2)),
+                            function(x){plot_UMAP_marker(seu_list_rep2[[x]], gene = "Slc34a1",name = x)+
+                                theme(strip.background = element_blank(),strip.text.x = element_blank())
+                                }),
+          nrow = 1)
+
+p.UMAPs_marker
+```
+
+### Figure 6C: Expression fraction
+
+```{r expression_frac}
+topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
+
+l_expr_perGene <- list()
+for(method in c("raw", "CellBender", "DecontX", "SoupX")){
+  for(rep in c("rep1","rep2","rep3","nuc2")){ 
+    expression_fraction_PT_markers <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/expression_fraction_PT_markers.RDS"))
+    l_expr_perGene[[method]][[rep]] <- expression_fraction_PT_markers 
+  }
+  l_expr_perGene[[method]] <- bind_rows(l_expr_perGene[[method]], .id = "replicate")
+} 
+
+df_expr_perGene <- bind_rows(l_expr_perGene, .id = "method")
+
+p.expr_frac_topGenes <- df_expr_perGene %>% 
+  mutate(default = (method == "CellBender" & param == "fpr0.01_total25000" |
+                    method == "DecontX" & param == "resDefault_emptyFalse" |
+                    method == "DecontX" & param == "resDefault_emptyTrue" |
+                    method == "SoupX" & param == "res1_contAuto" |
+                    method == "raw"),
+         replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc3", "nuc2")),
+         method2 = case_when(method == "DecontX" & param == "resDefault_emptyFalse" ~ "DecontX_default",
+                             method == "DecontX" & param == "resDefault_emptyTrue" ~ "DecontX_background",
+                             T ~ method))  %>% 
+  #left_join(dplyr::select(df_eval_metrics, c(method,replicate, param,default))) %>% 
+  #distinct() %>% 
+  filter(gene %in% topGenes, default == T) %>% 
+  mutate(gene = factor(gene, levels = rev(topGenes)),
+         replicate = factor(replicate, levels = rev(c("rep3", "rep1", "rep2", "nuc2"))),
+         method2 = factor(method2, levels = rev(c("raw", "CellBender","SoupX", "DecontX_default", "DecontX_background")))) %>%
+
+  ggplot(aes(x = replicate, y = expr_within_others, fill = method2))+
+    geom_boxplot(alpha = 0.8, outlier.size = 0.1)+
+    scale_fill_manual(values = method_colors2, limits = force, breaks = c("raw", "CellBender","SoupX", "DecontX_default", "DecontX_background"))+
+    coord_flip()+
+    theme_bw()+
+    theme(axis.title.y = element_blank(), legend.position = "none")+
+    labs(y = "Expression fraction in non-PT cells")
+```
+
+### Figure 6D: Log2 fold changes
+
+```{r log2fc}
+l_lfc_perGene_seurat <- list()
+for(method in c("raw", "CellBender", "DecontX", "SoupX")){
+  for(rep in  c("rep1", "rep2","rep3", "nuc2")){ 
+    differential_expression <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/differential_expression_seurat.RDS"))
+    l_lfc_perGene_seurat[[method]][[rep]] <- differential_expression %>% data.frame %>% 
+       rownames_to_column("gene") %>% 
+       mutate(gene = gsub("\\..*", "", gene)) %>% 
+       dplyr::filter(gene %in% topGenes)
+  }
+  l_lfc_perGene_seurat[[method]] <- bind_rows(l_lfc_perGene_seurat[[method]], .id = "replicate")
+} 
+
+df_lfc_perGene_seurat <- bind_rows(l_lfc_perGene_seurat, .id = "method")
+
+p.seurat_lfc_topGenes <- df_lfc_perGene_seurat %>% 
+  mutate(default = (method == "CellBender" & param == "fpr0.01_total25000" |
+                    method == "DecontX" & param == "resDefault_emptyFalse" |
+                    method == "DecontX" & param == "resDefault_emptyTrue" |
+                    method == "SoupX" & param == "res1_contAuto" |
+                    method == "raw"),
+         replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc3", "nuc2")),
+         method2 = case_when(method == "DecontX" & param == "resDefault_emptyFalse" ~ "DecontX_default",
+                             method == "DecontX" & param == "resDefault_emptyTrue" ~ "DecontX_background",
+                             T ~ method))  %>% 
+  filter(gene %in% topGenes, default == T) %>% 
+  mutate(gene = factor(gene, levels = rev(topGenes)),
+         replicate = factor(replicate, levels = rev(c("rep3", "rep1", "rep2", "nuc2"))),
+         method2 = factor(method2, levels = rev(c("raw", "CellBender","SoupX", "DecontX_default", "DecontX_background")))) %>%
+
+  ggplot(aes(x = replicate, y = avg_log2FC, fill = method2))+
+    geom_boxplot(alpha = 0.8, outlier.size = 0.1)+
+    scale_fill_manual(values = method_colors2, limits = force, breaks = c("raw", "CellBender","SoupX", "DecontX_default", "DecontX_background"))+
+    coord_flip()+
+    theme_bw()+
+    theme(axis.title.y = element_blank(), legend.position = "none")+
+    labs(y = "log2FC")
+```
+
+### Figure 6E: Clustering and classification
+
+```{r cluster_and_classification}
+df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
+
+inp <- df_eval_metrics %>% 
+  filter(default == T,
+         metric %in% c("tau", "rmsle","prediction_score", "purity", "kNN_overlap", "avg_silhouette","log_ratio_expression", "lfc")) %>% 
+  mutate(evaluation_category = factor(evaluation_category, levels = c("estimation_accuracy", "cluster_evaluation", "marker_evaluation")),
+         method = factor(method, levels = c("CellBender","SoupX","DecontX","raw")),
+         method2 = factor(method2, levels = c("CellBender","SoupX","DecontX_default","DecontX_background","raw")),
+         metric_long = case_when(metric == "avg_silhouette" ~ "Average silhouette",
+                                 metric == "prediction_score" ~ "Prediction score (delta)",
+                                 metric == "purity" ~ "Purity",
+                                 metric == "kNN_overlap" ~ "k-NN overlap",
+                                 T ~ metric))
+
+## scaled by range
+p.cluster_evaluation_range <- inp %>% 
+  mutate(scaled_range = case_when(metric %in% c("avg_silhouette","prediction_score") ~ delta/2,
+                                  metric %in% c("purity") ~ delta,
+                                  metric %in% c("kNN_overlap") ~ delta/50)) %>% 
+  filter(method != "raw", evaluation_category == "cluster_evaluation") %>% 
+  mutate(metric_long = factor(metric_long, levels = c("Prediction score (delta)", "Average silhouette","Purity","k-NN overlap")),
+         replicate = factor(replicate, levels = rev(c("rep3", "rep1", "rep2", "nuc2")))) %>% 
+  ggplot(aes(x = replicate, y = scaled_range, color = method2))+
+      geom_jitter(size = 2, width = 0.1)+
+      geom_hline(data = filter(inp, evaluation_category != "estimation_accuracy"), yintercept = 0, color = "black")+
+      coord_flip()+
+      #scale_y_continuous(limits = c(-0.5,0.5))+
+      scale_color_manual(values = method_colors2, limits = force)+
+      ggh4x::facet_nested(~metric_long)+
+      #ggh4x::facetted_pos_scales(y = list(metric == "rmsle" ~ scale_y_reverse()))+
+      theme_bw()+
+      labs(y = "scaled difference to score(uncorrected)")+
+          theme(axis.title.y = element_blank(), axis.text.x = element_text(size = 6), strip.background = element_rect(fill = "white"))
+
+p.cluster_evaluation_range
+```
+
+### Assemble Figure 6
+
+```{r assemble_fig6, fig.width=9, fig.height=9}
+legend_celltypes_wide <- get_legend(ggplot(filter(seu_list_rep2$CellBender, !is.na(celltype)), aes(x=UMAP_1, y = UMAP_2, color = celltype))+
+  geom_point()+theme_bw()+guides(colour = guide_legend(override.aes = list(size=2), nrow = 2))+theme(legend.position = "top")+
+    scale_color_manual(values = denisenko_colors, limits = force))
+
+legend_reassignment <- get_legend(ggplot(data = filter(seu_list_rep2$uncorrected, label_change != "same"), mapping =  aes_string(x = "UMAP_1", y = "UMAP_2",shape = "label_change"), size = 3, color = "black")+ geom_point()+
+        scale_shape_manual(values = setNames(c(21,22,23,24),c("multiple", "CellBender","SoupX","DecontX")))+
+        guides(shape=guide_legend(title="reassignment in"))+
+        theme_bw())
+                                
+legend_Slc_expr_wide <- get_legend(plot_UMAP_marker(filter(seu_list_rep2$uncorrected, label_change != "same"), gene = "Slc34a1",name = "uncorrected")+
+                                theme(legend.position = "bottom")+labs(color = "Slc34a1 expr. \n [log2(counts+1)]")+
+                                  guides(fill = "none", shape= "none"))
+
+p.UMAPs <- plot_grid(
+  plot_grid(
+    legend_celltypes_wide,
+    p.UMAPs_ct, 
+    p.UMAPs_marker,
+    legend_Slc_expr_wide,
+    nrow = 4, labels = c("","A","B",""), scale = c(1,0.95,0.95,1), rel_heights = c(0.2,1.1,0.9,0.2)),
+  legend_reassignment,
+  nrow = 1, rel_widths = c(1,0.15)
+)
+
+p.downstream_benchmark_new <- plot_grid(
+  p.UMAPs,
+  plot_grid(
+    p.expr_frac_topGenes,
+    p.seurat_lfc_topGenes+theme(legend.position = "right", legend.title = element_blank()),
+    nrow = 1, labels = c("C","D"), scale = c(0.95,0.95), align = "hv", rel_widths = c(0.65,1)#, axis = "blrt"
+  ),
+  plot_grid(p.cluster_evaluation_range+theme(legend.position = "none"), labels = "E"),
+  nrow = 3, rel_heights = c(1,0.6,0.6), scale = c(0.95,0.95,0.95), align = "hv", axis = "l")
+
+p.downstream_benchmark_new
+
+#ggsave("figures/Figure6_downstream_benchmark_new.pdf", p.downstream_benchmark_new, width = 9, height = 9)
+```
+
+## SUPPL. FIGURE S9: cell type UMAP all replicates
+
+```{r UMAPs_ct, fig.width=9, fig.height=12}
+plot_UMAP_ct <- function(seu_list){
+   plot_grid(plotlist = lapply(setNames(names(seu_list), names(seu_list)),
+                            function(x){plot_UMAP(seu_list[[x]], colors = denisenko_colors,name = x)}),
+          nrow = 1)
+}
+
+legend_celltypes_wide2 <- get_legend(ggplot(filter(seu_list_rep2$CellBender, !is.na(celltype)), aes(x=UMAP_1, y = UMAP_2, color = celltype))+
+  geom_point()+theme_bw()+guides(colour = guide_legend(override.aes = list(size=2), nrow = 2))+
+    scale_color_manual(values = denisenko_colors, limits = force))
+legend_reassignment2 <- get_legend(ggplot(data = filter(seu_list_rep2$uncorrected, label_change != "same"), mapping =  aes_string(x = "UMAP_1", y = "UMAP_2",shape = "label_change"), size = 3, color = "black")+ geom_point()+
+        scale_shape_manual(values = setNames(c(21,22,23,24),c("multiple", "CellBender","SoupX","DecontX")))+
+        guides(shape=guide_legend(title="reassignment in", nrow = 2))+ 
+        theme_bw())
+
+
+p.UMAP_ct_rep <- plot_grid(
+  NULL,
+  plot_UMAP_ct(seu_list_rep1),
+  plot_UMAP_ct(seu_list_rep2),
+  plot_UMAP_ct(seu_list_rep3),
+  plot_UMAP_ct(seu_list_nuc2),
+  plot_UMAP_ct(seu_list_nuc3), 
+  plot_grid(legend_celltypes_wide2, legend_reassignment2),
+  ncol = 1, labels = c("","rep1", "rep2", "rep3", "nuc2", "nuc3"), label_y = 1.11, rel_heights = c(0.1,1,1,1,1,1,0.35)
+)
+
+p.UMAP_ct_rep
+
+#ggsave("figures/Suppl_figure_UMAPs_corrected_CT.pdf",  p.UMAP_ct_rep, width = 9, height = 12)
+```
+
+## SUPPL. FIGURE S10: Slc34a1 UMAPs all replicates
+
+```{r UMAPs_slc, fig.width=9, fig.height=11}
+plot_UMAP_corrected_slc <- function(seu_list){
+   plot_grid(plotlist = lapply(setNames(names(seu_list), names(seu_list)),
+                            function(x){plot_UMAP_marker(seu_list[[x]], gene = "Slc34a1",name = x)
+                                }),
+          nrow = 1)
+}
+
+p.UMAP_slc_rep <- plot_grid(
+  NULL,
+  plot_UMAP_corrected_slc(seu_list_rep1),
+  plot_UMAP_corrected_slc(seu_list_rep2),
+  plot_UMAP_corrected_slc(seu_list_rep3),
+  plot_UMAP_corrected_slc(seu_list_nuc2),
+  plot_UMAP_corrected_slc(seu_list_nuc3), 
+  plot_grid(legend_Slc_expr_wide, legend_reassignment2),
+  ncol = 1, labels = c("","rep1", "rep2", "rep3", "nuc2", "nuc3"), label_y = 1.07, rel_heights = c(0.1,1,1,1,1,1,0.35), scale = 0.95
+)
+
+p.UMAP_slc_rep
+
+#ggsave("figures/Suppl_figure_UMAPs_corrected_Slc34a1.pdf",  p.UMAP_slc_rep, width = 9, height = 11)
+```
+
+## SUPPL. FIGURE S11: Effect on marker gene detection
+
+### S11A: Heatmap
+
+```{r marker_heatmap}
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+
+cell_sample <- cell_metadata %>% 
+  filter(Strain == "CAST", !is.na(celltype), replicate != "nuc3") %>% 
+  mutate(isPT = ifelse(celltype == "PT", "PT", "not PT")) %>% 
+  group_by(replicate, isPT) %>% 
+  slice_sample(n = 100)
+
+marker_plot_inp <- lapply(setNames(c("rep1", "rep2","rep3", "nuc2"), c("rep1", "rep2","rep3", "nuc2")), function(rep){ 
+  cormat_list <- list(raw = readRDS(paste0("Snakemake_backup/benchmark/corrected/raw/",rep,"/raw_cormat.RDS")),
+                      CellBender = readRDS(paste0("Snakemake_backup/benchmark/corrected/CellBender/",rep,"/fpr0.01_total25000_cormat.RDS")),
+                      DecontX_default = readRDS(paste0("Snakemake_backup/benchmark/corrected/DecontX/",rep,"/resDefault_emptyFalse_cormat.RDS")),
+                      DecontX_background = readRDS(paste0("Snakemake_backup/benchmark/corrected/DecontX/",rep,"/resDefault_emptyTrue_cormat.RDS")),
+                      SoupX = readRDS(paste0("Snakemake_backup/benchmark/corrected/SoupX/",rep,"/res1_contAuto_cormat.RDS")))
+  
+  marker_df <- lapply(cormat_list, function(cor_mat){
+     cor_mat[topGenes,] %>% t() %>% data.frame() %>% rownames_to_column("cell") %>% 
+      pivot_longer(cols = -cell, names_to = "gene", values_to = "expr") %>% 
+      mutate(log_expr = log10(expr+1)) %>% 
+      inner_join(cell_sample)
+  }) %>% bind_rows(.id = "method")
+  return(marker_df)
+}) %>% bind_rows(.id = "replicate")
+  
+
+p.PT_heatmap_methods <- marker_plot_inp %>% 
+  mutate(method = factor(method, levels = c("raw", "CellBender", "SoupX", "DecontX_default", "DecontX_background")),
+         replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc2")),
+         gene = factor(gene, levels = rev(topGenes)),
+         isPT = factor(isPT, levels = c("PT", "not PT"))) %>% 
+  ggplot(aes(x = cell, y = gene, fill = log_expr))+
+          geom_tile()+
+          ggh4x::facet_nested(method~replicate+isPT, scale = "free", space = "free")+
+          #facet_grid(~isPT, scales = "free", space = "free_x")+
+          theme_bw()+
+          scale_fill_gradient(low = "lightgrey", high = "red")+
+          scale_x_discrete(position = "top")+ 
+          theme(legend.position = "top", axis.text.y = element_text(size = 7), axis.title = element_blank(),
+                legend.box.margin=margin(-10,-10,-10,-10), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                strip.background = element_rect(fill = "white"), strip.text.y =  element_text(size = 7))
+
+#p.PT_heatmap_methods
+```
+### S11B: Overlap of top10 genes with Panglao markers
+
+```{r panglao_suppl1}
+panglao_markers <- readRDS("files/panglao_markers_Mm.RDS") 
+sigSEU<- readRDS("Extra_analyses/DE_seurat_sigUP.RDS")  %>% 
+  group_by(method2,replicate) %>% 
+  mutate( rnk = dense_rank(-avg_log2FC),
+          panglao = gene %in% panglao_markers) %>% 
+  group_by(replicate,gene) %>% 
+  mutate( Minrnk = min(rnk)) %>% ungroup 
+
+sigSEU$method2<-factor(sigSEU$method2, levels=c("raw","CellBender","SoupX","DecontX_default","DecontX_background"))
+
+top10.seu_panglao<-sigSEU %>% filter( panglao & rnk<=10) %>% 
+  ggplot(aes(x=method2,  fill=method2)) +
+  geom_bar() +
+  scale_fill_manual(values=method_colors2, limits = force)+
+  facet_grid(. ~ replicate) + coord_flip() +theme_bw()+ 
+  ylab("overlap of top10 LFC genes with panglao markers")+
+  theme(axis.title.y = element_blank(), legend.position =  "None")
+```
+
+### S11C: LFC of Panglao markers
+
+```{r panglao_suppl2}
+tmp<-sigSEU %>% filter(Minrnk<=100) %>% dplyr::transmute(method=method2, replicate, gene, panglao, avg_log2FC)
+  
+tmp2<-inner_join( tmp %>% filter(method !="raw") , 
+            tmp %>% filter(method == "raw") %>% dplyr::select(-method),
+            by = c("replicate","gene","panglao"),
+            suffix = c("","_raw"))
+
+top100cor<-tmp2 %>% ggplot( aes(x=avg_log2FC_raw, y=avg_log2FC,col=method)) +
+  geom_abline(intercept=0,slope=1,lty=1,col="black")+
+  geom_point(alpha=0.5)+ stat_smooth(method = "lm",se = F)+
+  scale_color_manual(values=method_colors2, limits = force)+
+  facet_grid(. ~ replicate) + theme_bw()+
+  xlab("log2-fold-change uncorrected") +
+  ylab("log2-fold-change corrected")+
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+```
+
+### Assemble Suppl Figure S11
+
+```{r suppl_figure_markers, fig.width=10, fig.height=11}
+p.topMarkers_suppl <- plot_grid(p.PT_heatmap_methods,
+                                top10.seu_panglao,
+                                top100cor,
+          nrow = 3, rel_heights = c(2.3,0.8,1), labels = c("A","B","C"),
+          align = "v", axis = "l")
+
+p.topMarkers_suppl
+
+#ggsave("figures/Suppl_figure_topMarkersEval.pdf", p.topMarkers_suppl, width = 10, height = 11)
+```
+## SUPPL. FIGURE S12: Absolute evaluation metrics
+
+```{r absolute_metrics, fig.width=9, fig.height=2.5}
+p.absolute_clustering <- inp %>% 
+  mutate(scaled_range = case_when(metric %in% c("avg_silhouette","prediction_score") ~ delta/2,
+                                  metric %in% c("purity") ~ delta,
+                                  metric %in% c("kNN_overlap") ~ delta/50,)) %>% 
+  filter(evaluation_category == "cluster_evaluation") %>% 
+  mutate(metric_long = factor(metric_long, levels = c("Prediction score (delta)", "Average silhouette","Purity","k-NN overlap")),
+          replicate = factor(replicate, levels = rev(c("rep3", "rep1", "rep2", "nuc2")))) %>% 
+  ggplot(aes(x = replicate, y = value, color = method2))+
+      geom_jitter(size = 2, width = 0.1)+
+      coord_flip()+
+      scale_color_manual(values = method_colors2, limits = force, breaks = c("raw", "CellBender","SoupX", "DecontX_default", "DecontX_background"))+
+      ggh4x::facet_nested(~metric_long, scale = "free")+
+      theme_bw()+
+      #labs(y = "scaled difference to score(uncorrected)")+
+      theme(axis.title = element_blank(), axis.text.x = element_text(size = 6), strip.background = element_rect(fill = "white"),
+                legend.title = element_blank())
+
+p.absolute_clustering
+
+#ggsave("figures/Suppl_figure_metrics_absolute.pdf", p.absolute_clustering, width = 9, height = 2.5)
+```
+
+## SUPPL. FIGURE S13: Evaluation of different parameter settings
+
+```{r param_settings, fig.width=8.5, fig.height=5.5}
+df_zscore <- df_eval_metrics %>% 
+  # Reverse metrics for which low value = better
+  mutate(delta = ifelse(metric %in% c("rmsle", "expression_fraction"), -delta, delta)) %>% 
+  # Remove estimation accuracy for parameter settings in which the contamination fraction has to be set  
+  filter(!(evaluation_category == "estimation_accuracy" & grepl("cont0",param))) %>% 
+  group_by(metric, replicate) %>% 
+  mutate(mean=mean(delta, na.rm = T),
+         sd=sd(delta, na.rm = T),
+         dist_to_mean = delta-mean,
+         zscore = dist_to_mean/sd) 
+
+df_zscore_mergeReplicates <- df_zscore %>%
+  group_by(method, param, evaluation_category, metric) %>% 
+  summarise(mean_zscore = mean(zscore)) %>% 
+  ungroup() %>% 
+  group_by(metric) %>% 
+  mutate(
+    metric_available_for_raw = ifelse("raw" %in% method, T, F), 
+    raw_value = ifelse(metric_available_for_raw == T, mean_zscore[method == "raw"], NA),
+    improvement = ifelse(mean_zscore > raw_value, T, F),
+    best_performance = ifelse(mean_zscore == max(mean_zscore), T, F))
+
+inp_param_setting <- df_zscore_mergeReplicates %>% 
+  filter(metric %in% c("tau", "rmsle","prediction_score", "purity", "avg_silhouette","expression_fraction", "lfc","kNN_overlap"),
+         method != "raw", 
+         !grepl("cont0.05",param)
+         ) %>%
+  mutate(param = sub("_total25000","",param),
+         #param = sub("_emptyFalse", "", param),
+         evaluation_category = case_when(evaluation_category == "estimation_accuracy" ~ "estimation \n accuracy",
+                                         evaluation_category == "cluster_evaluation" ~ "cell type \n identification",
+                                         evaluation_category == "marker_evaluation" ~ "marker gene \n detection"),
+         evaluation_category = factor(evaluation_category, levels = c("estimation \n accuracy","marker gene \n detection","cell type \n identification")),
+         param = ifelse(method == "SoupX", paste0(word(param,2,2,"_"),"_", word(param,1,1,"_")), param),
+         param = factor(param,levels = c("fpr0.01","fpr0.05","fpr0.1",
+                                         "resDefault_emptyFalse","res0.5_emptyFalse","res1_emptyFalse","res2_emptyFalse",
+                                         "resDefault_emptyTrue","res0.5_emptyTrue","res1_emptyTrue","res2_emptyTrue",
+                                         "contAuto_res1","contAuto_res0.5","contAuto_res2",
+                                         "cont0.1_res0.5","cont0.1_res1","cont0.1_res2",
+                                         "cont0.2_res0.5","cont0.2_res1","cont0.2_res2")),
+         metric_pretty = case_when(metric == "expression_fraction" ~ "Unspecific \n detection",
+                                   metric == "prediction_score" ~ "Prediction \n score",
+                                   metric == "purity" ~ "Purity",
+                                   metric == "avg_silhouette" ~ "Average silhouette",
+                                   metric == "tau" ~ "Kendall's tau",
+                                   metric == "rmsle" ~ "RMSLE",
+                                   metric == "lfc" ~ "Log2 fold change",
+                                   metric == "kNN_overlap" ~ "k-NN overlap",
+                                   T ~ metric))
+
+# highlight default in axis text
+p.parameter_settings <-  ggplot(inp_param_setting, aes(x = param, y = metric_pretty, fill = mean_zscore))+
+    geom_tile(color = "darkgrey")+
+    #geom_boxplot(aes(fill = method), alpha = 0.7)+
+    scale_fill_gradient2(low = "darkorange", high = "darkgreen")+
+    scale_y_discrete(position = "right")+
+    facet_grid(evaluation_category~method,scales = "free", space = "free", switch = "y")+
+    geom_hline(yintercept = 0)+
+    theme_bw()+
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, color = c("red",rep("black",10))), 
+          axis.title = element_blank(),strip.text.y = element_text(angle = 180), 
+          legend.position = "top", legend.text = element_text(size = 8),
+          strip.background = element_rect(fill = "white"), strip.text.x = element_text(face = "bold"))
+
+p.parameter_settings
+
+#ggsave("figures/Suppl_figure_parameter_settings.pdf", width = 8.5, height = 5.5)
+```

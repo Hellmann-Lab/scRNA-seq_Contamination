@@ -1,0 +1,235 @@
+---
+title: "Benchmark of background RNA correction methods"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(tidyverse)
+library(cowplot)
+library(SingleR)
+```
+
+## COLLECT EVALUATION METRICS
+
+### Estimation accuracy
+
+Within the Snakemake workflow the output of each method and parameter setting was compared to the genotype estimates for CAST cells of that replicate to calculate Kendall's tau and RMSLE values.
+
+```{r estimation_accuracy}
+l_est <- list()
+for(method in c("CellBender", "DecontX", "SoupX")){
+  for(rep in c("rep1","rep2","rep3", "nuc2", "nuc3")){ 
+    estimation_accuracy <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/estimation_accuracy.RDS"))
+    l_est[[method]][[rep]]<- estimation_accuracy %>% pivot_longer(cols = c("tau","rmsle"), names_to = "metric")
+  }
+  l_est[[method]] <- bind_rows(l_est[[method]], .id = "replicate")
+} 
+
+df_est <-  bind_rows(l_est, .id = "method") %>% mutate(evaluation_category = "estimation_accuracy")
+```
+
+### Cell type identification
+
+#### Clustering evaluation
+
+In the Snakemake workflow multiple external and internal cluster evaluation metrics were calculated using the cell type labels obtained by classifying the uncorrected data as reference labels.  
+External cluster evaluation metrics: Clustering of corrected data --> compare cluster labels to cell type labels
+Internal (silhouette scores): Calculated on the corrected data with cell type labels --> per cell silhouette scores were summarized per celltype (silhouette_[celltype]) and averaged across cell types to obtain a global "avg_silhouette".
+
+```{r cluster_evaluation}
+l_cluster <- list()
+for(method in c("CellBender", "DecontX", "SoupX","raw")){
+  for(rep in c("rep1","rep2","rep3","nuc2")){ 
+    cluster_evaluation_internal <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/cluster_evaluation_internal_cor.RDS"))
+    cluster_evaluation_external <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/cluster_evaluation_external_cor.RDS"))
+    l_cluster[[method]][[rep]] <- rbind(cluster_evaluation_external, cluster_evaluation_internal)
+  }
+  l_cluster[[method]] <- bind_rows(l_cluster[[method]], .id = "replicate")
+} 
+
+df_cluster <-  bind_rows(l_cluster, .id = "method") %>% mutate(evaluation_category = "cluster_evaluation")
+
+# Calculate average silhouette score per cell type cluster
+df_silhouette_ct <- df_cluster %>% 
+  filter(grepl("silhouette_", metric)) %>% 
+  group_by(method, replicate, param) %>% 
+  dplyr::summarize(metric = "avg_silhouette",
+            value = mean(value),
+            evaluation_category = "cluster_evaluation")
+
+df_cluster <- rbind(df_cluster, df_silhouette_ct)
+
+#saveRDS(df_cluster, "Extra_analyses/benchmark_metrics_cluster.RDS")
+```
+
+!Silhouette scores were also obtained per cell, this could still be included in the comparison!
+
+#### Classification evaluation
+
+Each corrected dataset was reclassified with SingleR using the Denisenko et al. data as reference. SingleR provides "delta" values as a measure for classification confidence, which depicts the difference of the assignment score for the assigned label and teh median score across all labels.  
+Results are evaluated with respect towards overlap of the newly assigned labels to the labels obtained for the uncorrected data and for the change of "delta" values, called "prediction_score" here. 
+
+```{r classification_evaluation}
+l_classification <- list()
+for(method in c("CellBender", "DecontX", "SoupX","raw")){
+  for(rep in c("rep1","rep2","rep3", "nuc2")){ 
+    classification <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/classification_evaluation.RDS"))
+    l_classification[[method]][[rep]]<-  lapply(classification, function(x){
+      deltas <- lapply(x$prediction_result@listData$orig.results, 
+                       getDeltaFromMedian)
+      res <- data.frame(cell = rownames(x$prediction_result),
+                        label = x$prediction_result@listData$pruned.labels,
+                        reference = x$prediction_result@listData$reference) %>% 
+        mutate(index = row_number(),
+               prediction_score = map2_dbl(reference,index, function(ref,i)deltas[[ref]][i]))
+      return(res)
+    }) %>% bind_rows(.id = "param")
+  }
+  l_classification[[method]] <- bind_rows(l_classification[[method]], .id = "replicate")
+} 
+
+df_classification <-  bind_rows(l_classification, .id = "method") %>% mutate(evaluation_category = "classification_evaluation")
+
+# Merge some labels into a broader category
+df_classification <- df_classification %>% 
+  mutate(celltype = case_when(label %in% c("CD_IC","CD_IC_A","CD_IC_B") ~ "CD_IC",
+                              label %in% c("T","NK","B","MPH") ~ "Immune",
+                              T ~ label))
+
+```
+
+
+Identify overlapping labels between uncorrected and reclassified corrected data and calculate the difference in prediction_scores for those. 
+This results in two tables: df_classification_summary (summarizing prediction scores) and df_classification_overlap (summarizing overlap of labels).  
+
+```{r classification_eval_summary}
+# compare raw and corrected assignments
+class_overlap_df <- df_classification %>% 
+  filter(method == "raw") %>% 
+  mutate(celltype_uncorrected = celltype, 
+         prediction_score_uncorrected = prediction_score,
+         label_uncorrected = label) %>% 
+  dplyr::select(replicate,cell, celltype_uncorrected, prediction_score_uncorrected, label_uncorrected) %>% 
+  right_join(df_classification)
+
+# calculate difference to uncorrected values for cells that were classified the same:
+df_classification_summary <- class_overlap_df %>% 
+  ungroup() %>% 
+  group_by(replicate) %>% 
+  mutate(difference = prediction_score - prediction_score_uncorrected) %>%
+  filter(!is.na(celltype), #method != "raw"
+         celltype == celltype_uncorrected                          # only consider overlapping labels, so that prediction scores are not compared across cell types
+  ) %>%  
+  group_by(method, replicate, param, celltype) %>% 
+  summarize(perCT_difference = mean(difference),
+            perCT_prediction_score = mean(prediction_score),
+            perCT_uncorrected = mean(prediction_score_uncorrected)) %>% 
+  group_by(method, replicate, param) %>% 
+  summarize(metric = "prediction_score",
+            value = mean(perCT_prediction_score),
+            evaluation_category = "cluster_evaluation",
+            delta = mean(perCT_difference),
+            rel_change = delta / mean(perCT_uncorrected))
+
+df_classifcation_overlap <- class_overlap_df %>% 
+  filter(!is.na(celltype) & !is.na(celltype_uncorrected) & method != "raw") %>% 
+  group_by(method, replicate, param) %>% 
+  summarize(metric = "classification_overlap",
+            value = sum(celltype == celltype_uncorrected) / length(celltype),
+            evaluation_category = "classification",
+            delta = NA, rel_change = NA)
+```
+
+### kNN overlap
+
+```{r kNN_overlap_results}
+l_kNN <- list()
+for(method in c("CellBender", "DecontX", "SoupX","raw")){
+  for(rep in c("rep1","rep2","rep3", "nuc2")){ 
+    l_kNN[[method]][[rep]]<- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/kNN_overlap.RDS")) 
+    } #%>% bind_rows(.id = "param")
+  l_kNN[[method]] <- bind_rows(l_kNN[[method]], .id = "replicate") %>% 
+    pivot_longer(-replicate, names_to = "param", values_to = "value")
+}
+
+df_kNN <-  bind_rows(l_kNN, .id = "method") %>% mutate(metric = "kNN_overlap", evaluation_category = "cluster_evaluation")
+```
+
+
+### Marker gene detection evaluation
+
+A list of marker genes for Proximal Tubule cells from the panglao database was evaluated for unspecific expression in other cell types and lfc comparing PT vs all other cells using limma.  
+Unspecific expression: expression_fraction  = fraction of non PT cells with expression -> averaged over all genes
+                       log_ratio_expression = ratio of exression fraction in non-PT vs PT cells -> also averaged over all genes
+                       
+```{r marker_evaluation}
+topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
+
+#### Evaluate expression fraction ######
+l_expr <- list()
+for(method in c("raw", "CellBender", "DecontX", "SoupX")){
+  for(rep in c("rep1","rep2","rep3","nuc2")){ 
+    expression_fraction_PT_markers <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/expression_fraction_PT_markers.RDS"))
+    l_expr[[method]][[rep]] <- expression_fraction_PT_markers %>% 
+      filter(expr_within_celltype > 0,
+             gene %in% topGenes) %>% 
+      group_by(param) %>% 
+      summarise(expression_fraction = mean(expr_within_others),
+                log_ratio_expression = mean(-log((expr_within_others+1)/(expr_within_celltype + 1)))) %>% 
+      pivot_longer(cols = c(expression_fraction, log_ratio_expression), names_to = "metric", values_to = "value")
+  }
+  l_expr[[method]] <- bind_rows(l_expr[[method]], .id = "replicate")
+} 
+df_expr <-  bind_rows(l_expr, .id = "method") %>% mutate(evaluation_category = "marker_evaluation")
+
+
+#### Log2 fold changes ######
+l_lfc <- list()
+for(method in c("raw", "CellBender", "DecontX", "SoupX")){
+  for(rep in  c("rep1", "rep2","rep3", "nuc2")){ 
+    differential_expression <- readRDS(paste0("Snakemake_backup/benchmark/evaluation/",method,"/",rep,"/differential_expression_seurat.RDS"))
+    l_lfc[[method]][[rep]] <- differential_expression %>% 
+       data.frame %>% 
+       rownames_to_column("gene") %>% 
+       mutate(gene = gsub("\\..*", "", gene)) %>% 
+       dplyr::filter(gene %in% topGenes) %>% 
+       group_by(param) %>% 
+        summarise(metric = "lfc", value = mean(avg_log2FC))
+  }
+  l_lfc[[method]] <- bind_rows(l_lfc[[method]], .id = "replicate")
+} 
+
+df_lfc <-  bind_rows(l_lfc, .id = "method") %>% mutate(evaluation_category = "marker_evaluation")
+```
+
+### Combine all metrics
+
+```{r combine_metrics}
+df_eval_metrics <- df_cluster %>% 
+  rbind(df_expr) %>% 
+  rbind(df_lfc) %>% 
+  rbind(df_kNN) %>% 
+  group_by(replicate, metric) %>% 
+  mutate(delta = value - value[method == "raw"],
+         rel_change = delta/abs(value[method == "raw"])) %>% 
+  ungroup() %>% 
+  rbind(mutate(df_est, delta = value, rel_change = NA)) %>% 
+  rbind(df_classification_summary) %>% 
+  rbind(df_classifcation_overlap) %>% 
+  mutate(default = (method == "CellBender" & param == "fpr0.01_total25000" |
+                    method == "DecontX" & param == "resDefault_emptyFalse" |
+                    method == "DecontX" & param == "resDefault_emptyTrue" |
+                    method == "SoupX" & param == "res1_contAuto" |
+                    method == "raw"),
+         replicate = factor(replicate, levels = c("rep3", "rep1", "rep2", "nuc3", "nuc2")),
+         method2 = case_when(method == "DecontX" & param == "resDefault_emptyFalse" ~ "DecontX_default",
+                             method == "DecontX" & param == "resDefault_emptyTrue" ~ "DecontX_background",
+                             T ~ method)) 
+
+saveRDS(df_eval_metrics, "Extra_analyses/benchmark_metrics.RDS")
+``` 
