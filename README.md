@@ -13,6 +13,10 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 - **applying different correction methods:** We compare three methods that are designed to remove noise originating from ambient/ background RNA: [CellBender](https://www.biorxiv.org/content/10.1101/791699v1), [SoupX](https://doi.org/10.1093/gigascience/giaa151) and [DecontX](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1950-6) in a range of different parameter settings. 
 - **evaluation of correction performance:** We evaluated the output of each method by comparing to our genotype based estimations and calculating metrics to assess denoising performance.
 
+## Analysis
+
+Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**)
+
 ## Figure scripts
 
 Beyond the standardized pipeline, we summarize results and perform further analysis and create figures with regards to  
@@ -20,16 +24,19 @@ Beyond the standardized pipeline, we summarize results and perform further analy
 - **02_per_cell_estimates**: Visualization of backround noise fractions per cell (related to Figure 2).
 - **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3).
 - **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4).
-- **05_06_benchmark_decontamination_methods**: Summarizing the method comparison results based on the Snakemake pipeline across datasets and parameter settings (related to Figure 5 & 6). 
+- **05_benchmark_estimation**: Comparison of background noise estimation accuracy of different computional methods (related to Figure 5, Suppl. Figure S8)
+- **06_benchmark_downstream_analysis**: Summarizing the method comparison results on downstream analysis effect based on the Snakemake pipeline across datasets and parameter settings (related to Figure 6, Suppl. Figures S9-13). 
 
 ## Benchmark Data availability
 We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse strains (BL6, SVLMJ, CAST). The data can be downloaded at [zenodo](https://zenodo.org/record/7328632#.Y3YMtOzML0s).
 
-We provide files with cell type, strain and contaminaiton information in zip-folder, where each contains 5 files:
+We provide files with cell type, strain and contamination information for each replicate in a zip-folder, where each contains 5 files:
 
-- **filtered_feature_bc_matrix.h5**
-- **perCell_noMito_CAST_binom.RDS**
-- **raw_feature_bc_matrix.h5**
-- **seurat_CAST.RDS**
-- **seurat.RDS**
+- filtered_feature_bc_matrix.h5 - CellRanger output, filtered count matrix
+- raw_feature_bc_matrix.h5 - CellRanger output, raw count matrix
+- seurat_CAST.RDS - Processed Seurat object with cell type annotations, *M.m. castaneus* cells only
+- seurat.RDS - Processed Seurat object with cell type annotations, all cells
+- perCell_noMito_CAST_binom.RDS - Estimated background noise levels per cell in *M.m. castaneus* cells
+
+
 
