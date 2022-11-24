@@ -2,26 +2,112 @@
 title: "Origin of background RNA"
 output: html_document
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
 
 library(tidyverse)
 library(cowplot)
-```
-
-## Correlation of profiles
-
-
-```{r cor, fig.width=4, fig.height=3}
 library(RVAideMemoire)
 
+domesticus_colors = setNames(c("#271758", "#887BAF", "#C4BBDE", "lightgrey"),
+                           c("endo", "empty", "cont", "other"))
+
+
+profile_colors = setNames(c("red",  "purple", "orange", "lightgrey"),
+                           c("endo", "empty", "cont", "other"))
+```
+
+
+## FIGURE 3: Characterization of ambient RNA in cells and empty droplets
+
+### Figure 3A: UMI curve with definition of cells and empty droplets
+
+UMI curve of total counts:
+
+```{r UMI_curve, fig.height=4, fig.width=5}
+raw_rep2 <- Seurat::Read10X_h5("Snakemake_backup/input/rep2/cellranger/raw_feature_bc_matrix.h5")
+cells_rep2 <- read.table("Snakemake_backup/input/rep2/cell_BC.txt")$V1
+
+assignment_rep2 <- data.frame(BC = colnames(raw_rep2), nUMI = Matrix::colSums(raw_rep2)) %>% 
+    arrange(desc(nUMI)) %>% 
+    mutate(index = row_number()) %>% 
+    dplyr::filter(index <= 100000) %>% 
+    mutate(isCell = ifelse(BC %in% cells_rep2, T, F))
+
+lowest_cell <- assignment_rep2 %>% filter(isCell == T) %>% tail(1) %>% pull(index)
+
+## UMI plot
+p.UMI_plot <-  ggplot(assignment_rep2, aes(x = index, y = nUMI, color = isCell))+
+    geom_point(size = 0.2, color = "black")+
+    scale_y_log10(limits = c(10, 200000))+
+    annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
+    annotate(x = 9000, y = 180000, geom = "text", label = "cells")+
+    annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
+    annotate(x = 58000, y = 180000, geom = "text", label = "empty droplets")+
+    labs(x = "Droplet rank", y = "Total UMI counts")+
+    theme_bw()+
+    theme(legend.position = c(0.85,0.8))+ 
+    guides(colour = guide_legend(override.aes = list(size=4)))
+```
+
+UMI curve of domesticus allele counts: 
+
+```{r fig.width=5, fig.height=6}
+csc_list <- list()
+
+for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+#for(rep in c("rep2")){
+  print(paste0("reading in replicate ", rep))
+  csc_int <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake_backup/genotype_estimation/",rep,"/csc_intermediate.RDS"))
+  cell_assignment <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/deconvolution_new/raw_inputs/cell_assignment_",rep,".RDS"))
+  csc_list[[rep]] <- csc_int %>% 
+    filter(SNPisALT == "CAST") %>%
+    dplyr::select(cell, position, DP, AD, ENSEMBL, SYMBOL) %>% 
+    inner_join(cell_assignment, by = c("cell" = "BC"))
+} 
+
+## Strain proportions per barcode
+perBC <- csc_list$rep2 %>% 
+  group_by(cell_assignment, Strain, cell, nUMI) %>% 
+  summarize(castaneus = sum(AD), 
+            domesticus = sum(DP) - sum(AD),
+            total = sum(DP)) %>% 
+  mutate(category = case_when(Strain == "CAST" ~ "cont",
+                              Strain %in% c("SvImJ","BL6") ~ "endo",
+                              cell_assignment == "empty" ~ "empty",
+                              T ~ "other"))  %>% 
+  left_join(dplyr::select(assignment_rep2, BC, index), by = c("cell" = "BC"))
+
+p.domesticus <- ggplot(perBC, aes(x = index, y = domesticus, color = category))+
+    geom_point(size = 0.1, alpha = 0.1)+
+    annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
+    annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
+    #geom_point(aes(y = total), color = "black", size = 0.1)+
+    scale_y_log10(limits = c(10,10000))+
+    scale_color_manual(values = profile_colors)+
+    scale_x_continuous(limits = c(0,100000))+
+    theme_bw()+
+    theme(legend.position = c(0.85,0.55), legend.title = element_blank())+
+    labs(x = "Droplet rank", y = expression(paste("UMI counts (", italic("M.m.domesticus "), "alleles)")))+# "UMI counts (M.m.domesticus alleles)")+
+    guides(colour = guide_legend(override.aes = list(size=3, alpha = 1)))
+
+p.UMI_curve_combined <- plot_grid(p.UMI_plot+theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(0, 0, 0, 0), "cm")), 
+          p.domesticus+theme(plot.margin = unit(c(0, 0, 0, 0), "cm")), 
+          nrow = 2, 
+          align = "v", 
+          rel_heights = c(1,1.2))
+```
+
+### Figure 3B: Correlation of pseudobulk profiles
+
+```{r cor, fig.width=4, fig.height=3}
 cor_list <- list()
 for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
-  prof <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/deconvolution_new/profile_comparisons/profiles_",rep,"_Gene_new.RDS"))$profiles_TMM
+  prof <- readRDS(paste0("deconvolution_new/profile_comparisons/profiles_",rep,"_Gene_new.RDS"))$profiles_TMM
   for(profile in c("empty", "endo")){
     conf <- spearman.ci(prof[["cont"]], prof[[profile]], 1000, 0.95)
     cor_list[[rep]][[paste0("cont vs ", profile)]] <- data.frame(cor = conf$estimate, CI_low = conf$conf.int[1], CI_high = conf$conf.int[2])
@@ -31,17 +117,6 @@ for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
 
 cor_df <- bind_rows(cor_list, .id = "replicate") %>% 
   mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
-
-p.cor <- ggplot(cor_df, aes(x = replicate, y = cor, fill = profile))+
-  geom_col(color= "black", linewidth = 0.1, position = "dodge", width = 0.6)+
-  geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = 0.2, position = position_dodge(width = 0.6))+
-  scale_fill_manual(values = c("darkgrey","lightgrey"))+
-  theme_bw()+
-  theme(axis.title.x = element_blank(), legend.title = element_blank(), legend.position = "bottom")+
-  labs(y = expression(rho), parse = T)
-
-p.cor
-
 
 p.cor_flip <- cor_df %>% 
   mutate(profile = factor(profile, levels = c("cont vs empty", "cont vs endo")),
@@ -56,12 +131,9 @@ p.cor_flip <- cor_df %>%
   theme(axis.title.y = element_blank(), legend.title = element_blank(), legend.position = "right")+
   labs(y = expression("Spearman's "~rho), parse = T)
 
-p.cor_flip
-
 ```
 
-## Profile deconvolution
-
+### Figure 3C: Deconvolutoin - cell type proportions
 
 ```{r deconvolution}
 res.endo.dat <- readRDS("deconvolution_new/output/scdc/summaries/CZI_kidney_mouse_10XChromium_sc_CAST_singleref_endo_prop.rds")
@@ -144,144 +216,11 @@ p.deconv <- all.props %>%
           axis.title = element_text(size = 12, face='bold'),
           strip.text = element_text(size = 12, face = 'bold'),
           strip.background = element_blank()) 
-
-p.deconv
-```
-### Profile deconvolution all replicates
-
-```{r deconvolution_all_rep}
-p.prop_allRep <- all.props %>% 
-  filter(Type %in% c("Reference","Estimated", "Empty", "Contamination")) %>% 
-  mutate(category = case_when(Type == "Empty" ~ "empty",
-                              Type == "Contamination" ~ "cont",
-                              Type == "Estimated" ~ "endo",
-                              Type == "Reference" ~ "reference")) %>% 
-
-  ggplot(aes(x = category, y = Proportion, fill = forcats::fct_rev(celltype))) + 
-    geom_col(color = 'black', lwd=0.1) + 
-    scale_fill_manual(values = celltype_colors) +
-    guides(fill = guide_legend(nrow = 2)) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
-    coord_flip() +
-    facet_grid(~replicate, scales='free') +
-    theme_bw() +
-    theme(legend.position = 'bottom',
-          axis.title.y = element_blank(),
-          legend.title = element_blank(),
-          legend.text = element_text(size = 8),
-          legend.key.size = unit(0.5, 'cm'),
-          axis.text.y = element_text(size = 10),
-          axis.text.x = element_text(size = 8),
-          axis.title = element_text(size = 12, face='bold'),
-          strip.text = element_text(size = 12, face = 'bold'),
-          strip.background = element_blank()) 
-
-p.prop_allRep
-
-ggsave("figures/Suppl_figure_Deconvolution_allRep.pdf", p.prop_allRep, width = 10, height = 3.6)
 ```
 
-
-## UMI curve
-
-```{r UMI_curve, fig.height=4, fig.width=5}
-raw_rep2 <- Seurat::Read10X_h5("Snakemake_backup/input/rep2/cellranger/raw_feature_bc_matrix.h5")
-cells_rep2 <- read.table("Snakemake_backup/input/rep2/cell_BC.txt")$V1
-
-assignment_rep2 <- data.frame(BC = colnames(raw_rep2), nUMI = Matrix::colSums(raw_rep2)) %>% 
-    arrange(desc(nUMI)) %>% 
-    mutate(index = row_number()) %>% 
-    dplyr::filter(index <= 100000) %>% 
-    mutate(isCell = ifelse(BC %in% cells_rep2, T, F))
-
-lowest_cell <- assignment_rep2 %>% filter(isCell == T) %>% tail(1) %>% pull(index)
-
-## UMI plot
-p.UMI_plot <- assignment_rep2 %>% 
-    ggplot(aes(x = index, y = nUMI, color = isCell))+
-    
-    geom_point(size = 0.2, color = "black")+
-    #scale_color_manual(values = c("grey","red"))+
-    scale_y_log10(limits = c(10, 200000))+
-    annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
-    annotate(x = 9000, y = 180000, geom = "text", label = "cells")+
-    annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
-    annotate(x = 58000, y = 180000, geom = "text", label = "empty droplets")+
-    #scale_x_log10()+
-    #geom_hline(yintercept = 900, linetype = "dashed")+
-    #geom_vline(xintercept = c(nUMI_low,nUMI_high), color = "#68C3D4") +
-    labs(x = "Droplet rank", y = "Total UMI counts")+
-    theme_bw()+
-    theme(legend.position = c(0.85,0.8))+ 
-    guides(colour = guide_legend(override.aes = list(size=4)))
-
-p.UMI_plot
-```
-
-## UMI curve with allele counts
-
-```{r fig.width=5, fig.height=6}
-csc_list <- list()
-
-for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
-#for(rep in c("rep2")){
-  print(paste0("reading in replicate ", rep))
-  csc_int <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/Snakemake_backup/genotype_estimation/",rep,"/csc_intermediate.RDS"))
-  cell_assignment <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/deconvolution_new/raw_inputs/cell_assignment_",rep,".RDS"))
-  csc_list[[rep]] <- csc_int %>% 
-    filter(SNPisALT == "CAST") %>%
-    dplyr::select(cell, position, DP, AD, ENSEMBL, SYMBOL) %>% 
-    inner_join(cell_assignment, by = c("cell" = "BC"))
-} 
-
-
-## Strain proportions per barcode
-domesticus_colors = setNames(c("#271758", "#887BAF", "#C4BBDE", "lightgrey"),
-                           c("endo", "empty", "cont", "other"))
-
-
-profile_colors = setNames(c("red",  "purple", "orange", "lightgrey"),
-                           c("endo", "empty", "cont", "other"))
-
-perBC <- csc_list$rep2 %>% 
-  group_by(cell_assignment, Strain, cell, nUMI) %>% 
-  summarize(castaneus = sum(AD), 
-            domesticus = sum(DP) - sum(AD),
-            total = sum(DP)) %>% 
-  mutate(category = case_when(Strain == "CAST" ~ "cont",
-                              Strain %in% c("SvImJ","BL6") ~ "endo",
-                              cell_assignment == "empty" ~ "empty",
-                              T ~ "other"))  %>% 
-  left_join(dplyr::select(assignment_rep2, BC, index), by = c("cell" = "BC"))
-
-
-
-p.domesticus <- ggplot(perBC, aes(x = index, y = domesticus, color = category))+
-    geom_point(size = 0.1, alpha = 0.1)+
-    annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
-    annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
-    #geom_point(aes(y = total), color = "black", size = 0.1)+
-    scale_y_log10(limits = c(10,10000))+
-    scale_color_manual(values = profile_colors)+
-    scale_x_continuous(limits = c(0,100000))+
-    theme_bw()+
-    theme(legend.position = c(0.85,0.55), legend.title = element_blank())+
-    labs(x = "Droplet rank", y = expression(paste("UMI counts (", italic("M.m.domesticus "), "alleles)")))+# "UMI counts (M.m.domesticus alleles)")+
-    guides(colour = guide_legend(override.aes = list(size=3, alpha = 1)))
-
-p.UMI_curve_combined <- plot_grid(p.UMI_plot+theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(0, 0, 0, 0), "cm")), 
-          p.domesticus+theme(plot.margin = unit(c(0, 0, 0, 0), "cm")), 
-          nrow = 2, 
-          align = "v", 
-          rel_heights = c(1,1.2))
-
-p.UMI_curve_combined
-```
-
-### Intron fraction per profile
+### Figure 1D: Intron fractions
 
 ```{r intron_profile}
-#SNP_matrix_list <- readRDS("Extra_analyses/SNP_matrix_list.RDS")
 SNP_matrix_list <- readRDS("Extra_analyses/SNP_matrix_list_check.RDS")
 
 calculate_intron_fractions <- function(matrices, vcf){
@@ -291,14 +230,10 @@ calculate_intron_fractions <- function(matrices, vcf){
              profile = c("empty", "cont", "endo"))
 }
 
-
-intron_frac <-   lapply(SNP_matrix_list, function(x){
+intron_frac <-  lapply(SNP_matrix_list, function(x){
    calculate_intron_fractions(matrices = x$matrices, vcf = x$vcf) 
   }) %>% bind_rows(.id = "replicate")
 
-
-#profile_colors = setNames(c("#271758", "#887BAF", "#C4BBDE", "lightgrey"),
-#                             c("endo", "empty", "cont", "other"))
 
 p.intron_frac <- intron_frac %>% 
   mutate(profile = factor(profile, levels = c("empty", "cont", "endo")),
@@ -310,61 +245,13 @@ p.intron_frac <- intron_frac %>%
   theme_bw()+
   labs(y = "fraction of intronic variants", x = "")+
   theme(legend.title = element_blank(), axis.title.y = element_blank())
-
-p.intron_frac
-
-
-# match variants across profiles
-SNP_matrix_list_match <- lapply(SNP_matrix_list, function(x){
-  genes_match <- Reduce(intersect, lapply(x$matrices, rownames))
-  x$matrices <- lapply(x$matrices, function(mat)mat[rownames(mat) %in% genes_match, ])
-  return(x)})
-
-
-intron_frac_match <-   lapply(SNP_matrix_list_match, function(x){
-   calculate_intron_fractions(matrices = x$matrices, vcf = x$vcf) 
-  }) %>% bind_rows(.id = "replicate")
-
-
-#profile_colors = setNames(c("#271758", "#887BAF", "#C4BBDE", "lightgrey"),
-#                             c("endo", "empty", "cont", "other"))
-
-intron_frac_match %>% 
-  mutate(profile = factor(profile, levels = c("empty", "cont", "endo")),
-         replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
-  ggplot(aes(x = replicate, y = fraction, color = profile))+
-  coord_flip()+
-  geom_jitter(size = 3, width = 0.2)+
-  scale_color_manual(values = profile_colors, limits = force)+
-  theme_bw()+
-  labs(y = "fraction of intronic variants", x = "")+
-  theme(legend.title = element_blank(), axis.title.y = element_blank())
-
-
 ```
 
-
-### Assemble figure
-
-```{r figure, fig.width=10, fig.height=7}
-p.figure4 <- plot_grid(
-  plot_grid(p.UMI_plot, p.domesticus, nrow = 2, align = "hv", labels = c("A", "B")),
-  plot_grid(p.cor+theme(legend.position = "right"),
-    #plot_grid(NULL,p.cor+theme(legend.position = "right"), nrow = 1, rel_widths = c(0.08,1)), 
-            p.deconv,
-            nrow = 2, labels = c("C", "D"), scale = c(0.95,0.95)),
-  nrow = 1, rel_widths = c(1,1.4)
-)
-
-p.figure4
-
-ggsave("figures/Figure4.pdf", p.figure4, height = 7, width = 10)
-```
+### Assemble Figure 3
 
 ```{r figure, fig.width=12, fig.height=5.5}
 p.figure4 <- plot_grid(
   p.UMI_curve_combined,
-  #plot_grid(p.UMI_plot, p.domesticus, nrow = 2, align = "hv", labels = c("A", "B")),
   plot_grid(
     plot_grid(p.cor_flip+theme(legend.position = "none"),
             p.intron_frac+theme(legend.position = "none", legend.title= element_blank()),
@@ -376,101 +263,17 @@ p.figure4 <- plot_grid(
             nrow = 1, rel_widths = c(1,1,0.63), align = "hv", labels = c("B", "D")),
     p.deconv+theme(legend.position = "right")+guides(fill = guide_legend(ncol = 2)),
     nrow = 2, labels = c("","C")), 
-    #labels = c("C","D","E"), scale = c(0.95,0.95, 0.95), rel_heights = c(0.5,0.5,1), align = "v"),
   nrow = 1, rel_widths = c(1,1.7), scale = c(0.9,1), labels = c("A","")
 )
 
 p.figure4
 
-#ggsave("figures/Figure4.pdf", p.figure4, height = 5.5, width = 12)
-ggsave("figures/Figure3_cont_origin.png", p.figure4, height = 5.5, width = 12)
+#ggsave("figures/Figure3_cont_origin.png", p.figure4, height = 5.5, width = 12)
 ```
 
-
-
-
-## Strain proportions in empty droplets 
-
-```{r strain_comp, fig.width=10, fig.height=3}
-strain_frac <- lapply(csc_list, function(x){
-  x %>%
-    group_by(cell_assignment) %>% 
-  summarize(castaneus = sum(AD) / sum(DP),
-            musculus = 1-castaneus) %>% 
-    pivot_longer(cols = c(musculus, castaneus), names_to = "subspecies", values_to = "fraction")
-}) %>% bind_rows(.id = "replicate")
-
-saveRDS(strain_frac, "Extra_analyses/strain_frac_empty.RDS")
-
-p.allele_frac <- ggplot(strain_frac, aes(x = cell_assignment, y = fraction, fill = subspecies)) + 
-    geom_col(color = 'black', lwd=0.1) + 
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
-    coord_flip() +
-    facet_grid(~replicate, scales='free') +
-    theme_bw()+
-    labs(y = "allele fraction", x = "")
-
-strain_frac_cells <- lapply(csc_list, function(x){
-  x %>% 
-    filter(!is.na(Strain)) %>% 
-    select(cell, Strain) %>% 
-    distinct() %>% 
-  summarize(castaneus = sum(Strain == "CAST") / length(Strain),
-             musculus = 1-castaneus) %>% 
-    pivot_longer(cols = c(musculus, castaneus), names_to = "subspecies", values_to = "fraction")
-}) %>% bind_rows(.id = "replicate")
-
-
-p.strain_frac <- ggplot(strain_frac_cells, aes(x = "single cells", y = fraction, fill = subspecies)) + 
-    geom_col(color = 'black', lwd=0.1) + 
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
-    coord_flip() +
-    facet_grid(~replicate, scales='free') +
-    theme_bw()+
-    labs(y = "cell fraction", x = "")
-
-
-plot_grid(p.strain_frac, p.allele_frac, nrow = 2, rel_heights = c(0.6,1))
-
-
-bla <- csc_list$nuc2 %>% 
-  filter(!is.na(Strain)) %>% 
-  mutate(subspecies = ifelse(Strain == "CAST", "castaneus", "musculus")) %>% 
-  group_by(subspecies) %>% 
-  summarise(AD = sum(AD), 
-            DP = sum(DP))
-
-bla %>% 
-  mutate(cont = ifelse(subspecies == "castaneus", DP-AD, AD),
-         endo = DP - cont) %>% 
-  pivot_longer(cols = c(cont, endo), names_to = "assignment", values_to = "nUMI") %>% 
-  group_by(assignment) %>% 
-  mutate(fraction = nUMI / sum(nUMI))
-
-
-blub <- csc_list$nuc2 %>% 
-  filter(!is.na(Strain)) %>% 
-  mutate(subspecies = ifelse(Strain == "CAST", "castaneus", "musculus"))
-
-cast_cell <- blub %>% 
-  group_by(subspecies, cell) %>% 
-  summarise(CAST_frac = sum(AD) / sum(DP)) 
-
-ggplot(cast_cell, aes(x = subspecies, y = CAST_frac, color = subspecies))+
-  geom_quasirandom(size = 0.3)+
-  theme_bw()
-
-```
-
-
-### UMI curve for all replicates
+## SUPPL. FIGURE S4: UMI curves for all replicates
 
 ```{r UMI_curve_replicates}
-
-rep = "rep1"
-empty_min = 40000
-empty_max = 75000
-
 plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
   raw_mat <- Seurat::Read10X_h5(paste0("Snakemake_backup/input/",rep,"/cellranger/raw_feature_bc_matrix.h5"))
   cell_BC <- read.table(paste0("Snakemake_backup/input/",rep,"/cell_BC.txt"))$V1
@@ -537,204 +340,50 @@ plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
   return(p.UMI_curve_combined)
 }
 
-
-
 UMI_curve_list <- list()
-
 UMI_curve_list$rep1 = plot_UMI_curves("rep1", empty_min = 40000, empty_max = 75000)
 UMI_curve_list$rep2 = plot_UMI_curves("rep2", empty_min = 40000, empty_max = 75000, no_y_lab = T)
 UMI_curve_list$rep3 = plot_UMI_curves("rep3", empty_min = 20000, empty_max = 60000, no_y_lab = T)
 UMI_curve_list$nuc2 = plot_UMI_curves("nuc2", empty_min = 30000, empty_max = 70000, no_y_lab = T)
 UMI_curve_list$nuc3 = plot_UMI_curves("nuc3", empty_min = 20000, empty_max = 60000, no_y_lab = T)
 
-
-
-p.UMI_curve_replicates <- plot_grid(plotlist = UMI_curve_list, 
-          nrow = 1 )
+p.UMI_curve_replicates <- plot_grid(plotlist = UMI_curve_list, nrow = 1 )
 
 p.UMI_curve_replicates
 
-ggsave("figures/Suppl_figure_UMI_curves.png", p.UMI_curve_replicates, height = 5.5, width = 20)
-
-
+#ggsave("figures/Suppl_figure_UMI_curves.png", p.UMI_curve_replicates, height = 5.5, width = 20)
 ```
 
+## SUPPL. FIGURE S5: Deconvolution - cell type proportions for all replicates
 
+```{r deconvolution_all_rep, fig.width=10, fig.height=3.6}
+p.prop_allRep <- all.props %>% 
+  filter(Type %in% c("Reference","Estimated", "Empty", "Contamination")) %>% 
+  mutate(category = case_when(Type == "Empty" ~ "empty",
+                              Type == "Contamination" ~ "cont",
+                              Type == "Estimated" ~ "endo",
+                              Type == "Reference" ~ "reference")) %>% 
 
+  ggplot(aes(x = category, y = Proportion, fill = forcats::fct_rev(celltype))) + 
+    geom_col(color = 'black', lwd=0.1) + 
+    scale_fill_manual(values = celltype_colors) +
+    guides(fill = guide_legend(nrow = 2)) +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+    coord_flip() +
+    facet_grid(~replicate, scales='free') +
+    theme_bw() +
+    theme(legend.position = 'bottom',
+          axis.title.y = element_blank(),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 8),
+          legend.key.size = unit(0.5, 'cm'),
+          axis.text.y = element_text(size = 10),
+          axis.text.x = element_text(size = 8),
+          axis.title = element_text(size = 12, face='bold'),
+          strip.text = element_text(size = 12, face = 'bold'),
+          strip.background = element_blank()) 
 
+p.prop_allRep
 
-```{r}
-############################
-seu_rep1 <- readRDS("Snakemake_backup/input/rep1/seurat.RDS")
-
-raw_rep2 <- Seurat::Read10X_h5("Snakemake_backup/input/rep2/cellranger/raw_feature_bc_matrix.h5")
-seu_rep2 <- readRDS("Snakemake_backup/input/rep2/seurat.RDS")
-
-prepare_cell_assignment <- function(raw_mat, seurat){
-  # extract cell type assignments from seurat object
-  celltype <- seurat@meta.data %>% 
-    rownames_to_column("BC") %>%
-    #mutate(BC = paste0(BC,"-1")) %>% 
-    dplyr::select(BC,celltype,Strain)
-
-  # order by nUMI, filter for first 200.000 BCs, add cell type info
-  cell_ass <- data.frame(BC = colnames(raw_mat), nUMI = Matrix::colSums(raw_mat)) %>% 
-    arrange(desc(nUMI)) %>% 
-    mutate(index = row_number()) %>% 
-    dplyr::filter(index <= 100000) %>%
-    left_join(celltype) %>% 
-    mutate(isCell = ifelse(is.na(celltype),F,T))
-  
-  return(cell_ass)
-}
-
-assignment_rep1 <- prepare_cell_assignment(raw_rep1, seu_rep1)
-assignment_rep2 <- prepare_cell_assignment(raw_rep2, seu_rep1)
-
-assignment_rep1 %>% 
-    ggplot(aes(x = index, y = nUMI, color = isCell))+
-    scale_color_manual(values = c("grey","red"))+
-    geom_point(size = 0.2)+
-    scale_y_log10(limits = c(1, 200000))+
-    #scale_x_log10()+
-    #geom_hline(yintercept = 900, linetype = "dashed")+
-    #geom_vline(xintercept = c(nUMI_low,nUMI_high), color = "#68C3D4") +
-    #labs(title = paste0(title, ", nCells =  ", sum(assignment_rep1$isCell)))+
-    theme_bw()+
-    theme(legend.position = c(0.85,0.8))+ 
-    guides(colour = guide_legend(override.aes = list(size=4)))
+#ggsave("figures/Suppl_figure_Deconvolution_allRep.pdf", p.prop_allRep, width = 10, height = 3.6)
 ```
-
-
-## Profile comparison - extra
-
-### Profiles from all strains
-
-```{r profile_allStrains}
-cor_list_allStrains <- list()
-for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
-  prof <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/deconvolution_new/profile_comparisons/profiles_",rep,"_Gene_new_allstrains.RDS"))$profiles_TMM
-  for(profile in c("empty", "endo")){
-    conf <- spearman.ci(prof[["cont"]], prof[[profile]], 1000, 0.95)
-    cor_list_allStrains[[rep]][[paste0("cont vs ", profile)]] <- data.frame(cor = conf$estimate, CI_low = conf$conf.int[1], CI_high = conf$conf.int[2])
-  }
-  cor_list_allStrains[[rep]] <- bind_rows(cor_list_allStrains[[rep]], .id = "profile")
-}
-
-cor_df_allStrains <- bind_rows(cor_list_allStrains, .id = "replicate") %>% 
-  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
-
-p.cor_flip_allStrains <- cor_df_allStrains %>% 
-  mutate(profile = factor(profile, levels = c("cont vs empty", "cont vs endo")),
-         replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
-  
-  ggplot(aes(x = replicate, y = cor, fill = profile))+
-  geom_col(color= "black", linewidth = 0.1, position = "dodge", width = 0.6)+
-  geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = 0.2, position = position_dodge(width = 0.6))+
-  coord_flip()+
-  scale_fill_manual(values = c("darkgrey","lightgrey"))+
-  theme_bw()+
-  theme(axis.title.y = element_blank(), legend.title = element_blank(), legend.position = "right")+
-  labs(y = expression("Spearman's "~rho), parse = T)
-
-plot_grid(p.cor_flip, p.cor_flip_allStrains, 
-          nrow = 2)
-
-```
-
-### Profiles with CAST endo
-
-```{r profiles_CAST_endo}
-cor_list_CASTendo <- list()
-for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
-  prof <- readRDS(paste0("/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/deconvolution_new/profile_comparisons/profiles_",rep,"_Gene_new_endo2.RDS"))$profiles_TMM
-  for(profile in c("empty", "endo_CAST")){
-    conf <- spearman.ci(prof[["cont"]], prof[[profile]], 1000, 0.95)
-    cor_list_CASTendo[[rep]][[paste0("cont vs ", profile)]] <- data.frame(cor = conf$estimate, CI_low = conf$conf.int[1], CI_high = conf$conf.int[2])
-  }
-  cor_list_CASTendo[[rep]] <- bind_rows(cor_list_CASTendo[[rep]], .id = "profile")
-}
-
-cor_df_CASTendo <- bind_rows(cor_list_CASTendo, .id = "replicate") %>% 
-  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
-
-p.cor_flip_CASTendo <- cor_df_CASTendo %>% 
-  mutate(profile = factor(profile, levels = c("cont vs empty", "cont vs endo_CAST")),
-         replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
-  
-  ggplot(aes(x = replicate, y = cor, fill = profile))+
-  geom_col(color= "black", linewidth = 0.1, position = "dodge", width = 0.6)+
-  geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = 0.2, position = position_dodge(width = 0.6))+
-  coord_flip()+
-  scale_fill_manual(values = c("darkgrey","lightgrey"))+
-  theme_bw()+
-  theme(axis.title.y = element_blank(), legend.title = element_blank(), legend.position = "right")+
-  labs(y = expression("Spearman's "~rho), parse = T)
-
-plot_grid(p.cor_flip, p.cor_flip_allStrains, p.cor_flip_CASTendo, 
-          nrow = 1, labels = c("domesticus endo", "allStrains", "castaneus endo"), scale = c(0.9,0.9,0.9))
-
-```
-
-#### intron fraction with CAST endo or all strains
-
-```{r intron_frac_extra}
-SNP_matrix_list2 <- readRDS("Extra_analyses/SNP_matrix_list2.RDS")
-
-calculate_intron_fractions2 <- function(matrices, vcf){
-  lapply(setNames(names(matrices), names(matrices)), function(profile){
-    sum(matrices[[profile]][rownames(matrices[[profile]]) %in% vcf$position[vcf$intron_variant == T], ]) / sum(matrices[[profile]])
-  }) %>% 
-    bind_rows(.id = "profile")
-}
-
-
-intron_frac2 <-   lapply(SNP_matrix_list2, function(x){
-   calculate_intron_fractions2(matrices = x$matrices, vcf = x$vcf) 
-  }) %>% bind_rows(.id = "replicate")
-
-
-profile_colors = setNames(c("red","red","red", "red","purple","purple",  "orange","orange", "lightgrey"),
-                             c("endo","endo_CAST", "endo_domesticus", "endo_allStrains", "empty", "empty_allStrains", "cont","cont_allStrains", "other"))
-
-plot_intron_frac <- function(profiles_to_compare){
-  intron_frac2 %>%
-    pivot_longer(-replicate, names_to = "profile", values_to = "fraction") %>% 
-    filter(profile %in% profiles_to_compare) %>% 
-    mutate(profile = factor(profile, levels = profiles_to_compare),
-           replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
-    ggplot(aes(x = replicate, y = fraction, color = profile))+
-    coord_flip()+
-    scale_y_continuous(limits = c(0,0.7))+
-    geom_jitter(size = 3, width = 0.1, alpha = 0.9)+
-    scale_color_manual(values = profile_colors, limits = force)+
-    theme_bw()+
-    labs(y = "fraction of intronic variants", x = "")+
-    theme(legend.title = element_blank(), axis.title.y = element_blank())
-}
-
-plot_intron_frac(c("empty", "cont", "endo_CAST"))
-plot_intron_frac(c("empty", "cont", "endo_domesticus"))
-plot_intron_frac(c("empty_allStrains", "cont_allStrains", "endo_allStrains"))
-
-```
-
-```{r compare_strategies}
-plot_grid(
-  plot_grid(p.cor_flip+theme(legend.position = "none"), plot_intron_frac(c("empty", "cont", "endo_domesticus"))),
-  plot_grid(p.cor_flip_CASTendo+theme(legend.position = "none"), plot_intron_frac(c("empty_allStrains", "cont", "endo_CAST"))),
-  plot_grid(p.cor_flip_allStrains+theme(legend.position = "none"), plot_intron_frac(c("empty_allStrains", "cont_allStrains", "endo_allStrains"))),
-  nrow = 3)
-
-plot_grid(
-  plot_grid(p.cor_flip+theme(legend.position = "none"),
-            p.cor_flip_CASTendo+theme(legend.position = "none"), 
-            p.cor_flip_allStrains+theme(legend.position = "none"), nrow = 3),
-  plot_grid(plot_intron_frac(c("empty", "cont", "endo_domesticus")),
-            plot_intron_frac(c("empty_allStrains", "cont", "endo_CAST")),
-            plot_intron_frac(c("empty_allStrains", "cont_allStrains", "endo_allStrains")), nrow = 3, align = "v"),
-  nrow = 1, rel_widths = c(0.8,1))
-
-
-```
-

@@ -1,0 +1,258 @@
+---
+title: "Background noise levels"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(cowplot)
+library(tidyverse)
+library(ggbeeswarm)
+```
+
+
+```{r color_schemes}
+strain_colors = setNames(c("#D05957", "#4189C4", "#97B4DD", "lightgrey"),
+                         c("CAST", "BL6", "SvImJ", "doublet"))
+
+replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "darkgrey"), 
+                             c("rep1", "rep2", "rep3", "nuc2", "nuc3"))
+
+```
+
+## FIGURE 2: Background noise across replicates
+
+```{r load_data}
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+
+cell_metadata <- cell_metadata %>% 
+   filter(Strain %in% c("CAST", "SvImJ", "BL6")) %>% 
+   mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
+
+cell_metadata_CAST <- filter(cell_metadata, Strain == "CAST")
+```
+
+
+### Figure 2A: Global contamination fraction (corrected for intra-genotype contamination)
+
+```{r global_cont, fig.width=4, fig.height=4}
+p.global_cont <- ggplot(cell_metadata_CAST, aes(x = replicate, y = contPerCell_binom*100, color = replicate))+
+    geom_quasirandom(size = 0.2)+
+    geom_boxplot(outlier.color = NA, width = 0.2, color = "black")+
+    scale_color_manual(values = replicate_colors)+
+    coord_cartesian(ylim = c(0, 70))+
+    labs(y = "% background RNA/ cell")+
+    theme_bw()+
+    theme(axis.title.x = element_blank(), legend.position = "none",
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#p.global_cont
+```
+
+### Figure 2B: Contamination vs endogenous allele counts
+
+Read in allele counts per variant & cell (tables generated in Snakemake workflow), summarize informative variants in CAST cells.
+
+```{r}
+csc_list <- list()
+for(exp in c("rep1", "rep2", "rep3", "nuc2","nuc3")){
+  csc_list[[exp]] <- readRDS(paste0("Snakemake_backup/genotype_estimation/",exp,"/csc_intermediate.RDS"))
+}
+
+csc_full <- bind_rows(csc_list, .id = "replicate")
+# Filtering: remove intergenic variants & empty droplets/bad cells
+csc_full <- filter(csc_full, 
+                   !is.na(ENSEMBL),
+                   cell %in% cell_metadata$cell)
+
+# Summarize for CAST variants
+summary_CAST_allele_freq <- csc_full %>% 
+  filter(SNPisALT == "CAST") %>% 
+  group_by(replicate, Strain, cell) %>% 
+  summarise(#nSNP = length(unique(position)),
+            nGene = length(unique(ENSEMBL)),
+            nCount = sum(DP),
+            nCount_CAST = sum(AD),
+            CAST_AF = nCount_CAST / nCount)
+
+# combine with cell metadata
+summary_CAST_alleles <- summary_CAST_allele_freq %>% 
+  left_join(select(cell_metadata,-CAST_AF)) %>% 
+  #left_join(select(cell_metadata, c(replicate,cell, best_singlet, prob_doublet, best_doublet, celltype))) %>% 
+  mutate(Strain = ifelse(Strain == "doublet" & grepl("CAST", best_singlet) & prob_doublet >= 0.99, "doublet (CAST/other)", Strain)) %>% 
+  filter(Strain %in% c("CAST", "doublet (CAST/other)", "BL6", "SvImJ")) %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")),
+         Strain = factor(Strain, levels = c("CAST", "doublet (CAST/other)", "BL6", "SvImJ")))
+
+CAST_df <- summary_CAST_alleles %>% 
+  filter(Strain == "CAST") %>% 
+  mutate(nCount_Cont = nCount - nCount_CAST)
+```
+
+Plot Figure 2B:
+
+```{r plot_figure2b}
+p.cont_v_endo <- ggplot(CAST_df, aes(x = nCount - nCount_Cont, y = nCount_Cont,  group=replicate))+
+  stat_density_2d(aes(alpha = ..level.., fill = replicate), geom = "polygon", contour_var = "ndensity", color = "grey")+
+  scale_fill_manual(values = replicate_colors)+
+  scale_alpha_continuous(range = c(0.3, 1), limits = c(0.1,1),guide = guide_none())+
+  scale_color_manual(values = replicate_colors)+
+  scale_x_log10()+
+  scale_y_log10()+
+  facet_grid(~replicate, scales = "free")+
+  theme_bw()+
+  #theme(legend.position = c(0.85,0.2))+
+  labs(x = "castaneus allele counts (UMIs/cell)", y = "domesticus allele counts (UMIs/cell)")
+```
+
+### Assemble Figure 2
+
+```{r, fig.width=11, fig.height=3.2}
+p.fig2 <- plot_grid(p.global_cont, 
+                    p.cont_v_endo+theme(legend.position = "none", axis.text.x = element_text(size = 8)),
+          nrow = 1, labels = c("A","B"), rel_widths = c(1,2.5), scale = c(0.95,0.95))
+
+p.fig2
+
+#ggsave("figures/Figure2.pdf", p.fig2, height = 3.2, width = 11)
+```
+
+## SUPPL. FIGURE S1: Estimates with confidence intervals
+
+```{r estimation_with_CI, fig.width=10, fig.height=10}
+### estimation of background RNA
+p.est_cell <- summary_CAST_alleles %>% 
+  filter(Strain %in% c("CAST","SvImJ", "BL6"), 
+         !is.na(celltype)) %>% 
+  group_by(replicate) %>% 
+  mutate(
+    Strain = factor(Strain, levels = c("CAST","SvImJ", "BL6" )),
+    rank = dense_rank(contPerCell_binom)) %>% 
+  ggplot(aes(x = rank, y = 100*contPerCell_binom))+
+  geom_errorbar(aes(ymin=100*CI_low, ymax=100*CI_high, color = Strain), width=.1)+
+  scale_color_manual(values = strain_colors)+
+  geom_point(size = 0.2)+
+  facet_grid(Strain~replicate, scale = "free_x")+
+  labs(x = "cell index", y = expression(rho["cell"]))+
+  #labs(x = "cell rank", y = "% background RNA (corrected)")+
+  theme_bw()+
+  theme(legend.position = "none", axis.text.x = element_text(size = 8))
+
+
+p.marginal_rep <- summary_CAST_alleles %>% 
+  filter(Strain %in% c("CAST","SvImJ", "BL6"), 
+         !is.na(celltype)) %>% 
+  ggplot(aes(x = Strain, y = 100*contPerCell_binom, fill = Strain))+
+  geom_boxplot(width = 0.7)+
+  scale_fill_manual(values = strain_colors)+
+  facet_grid(~replicate)+
+  theme_bw()+
+  theme(legend.position = "none", axis.title.x = element_blank())+
+  labs(y = expression(rho["cell"]))
+
+# confidence interval width
+p.marginal_CI <- summary_CAST_alleles %>% 
+  filter(Strain %in% c("CAST","SvImJ", "BL6"), 
+         !is.na(celltype)) %>% 
+  mutate(Strain = factor(Strain, levels = c("CAST","SvImJ", "BL6" )),
+         CI_width = CI_high - CI_low) %>% 
+  ggplot(aes(x = Strain, y = 100*CI_width, fill = Strain))+
+  scale_y_log10()+
+  geom_boxplot(width = 0.7)+
+  scale_fill_manual(values = strain_colors)+
+  facet_grid(~replicate)+
+  theme_bw()+
+  theme(legend.position = "none", axis.title.x = element_blank())+
+  labs(y = "CI width")
+
+p.estimation_confidence <- plot_grid(p.est_cell,
+          p.marginal_rep,
+          p.marginal_CI, 
+          nrow = 3, align = "h", rel_heights = c(2.5,1,1),axis = "b", labels = c("A","B","C"))
+
+p.estimation_confidence
+
+#ggsave("figures/Suppl_figure_EstConfidence.pdf", p.estimation_confidence, width = 10, height = 10)
+```
+
+
+## SUPPL. FIGURE S3: Detection of cross genotype contamination (CAST allele frequency)
+
+```{r, fig.width=10, fig.height=3.5}
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+csc_full <- bind_rows(csc_list, .id = "replicate")
+# Filtering: remove intergenic variants & empty droplets/bad cells
+csc_full <- filter(csc_full, 
+                   !is.na(ENSEMBL),
+                   cell %in% cell_metadata$cell)
+
+# Contrasting only castaneus vs domesticus
+summary_CAST_AF_subspec <- csc_full %>% 
+  filter(SNPisALT == "CAST") %>% 
+  mutate(subspecies = case_when(Strain == "CAST" ~ "M.m. castaneus \n cells",
+                                Strain %in% c("SvImJ","BL6") ~ "M.m. domesticus \n cells",
+                                T ~ Strain)) %>% 
+  group_by(replicate, subspecies, cell) %>% 
+  summarise(#nSNP = length(unique(position)),
+            nGene = length(unique(ENSEMBL)),
+            nCount = sum(DP),
+            nCount_CAST = sum(AD),
+            CAST_AF = nCount_CAST / nCount)
+
+
+# combine with cell metadata
+summary_subspec <- summary_CAST_AF_subspec %>% 
+  left_join(select(cell_metadata,-CAST_AF)) %>% 
+                   #c(replicate,cell, best_singlet, prob_doublet, best_doublet))) %>% 
+  mutate(subspec2 = ifelse(subspecies == "doublet" & grepl("CAST", best_singlet) & prob_doublet >= 0.99, "doublet \n (castaneus/domesticus)", subspecies)) %>% 
+  filter(subspec2 %in% c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)")) %>% 
+  mutate(replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2"))),
+         subspec2 = factor(subspec2, levels = rev(c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)"))))
+
+
+
+p.subspec_CAST_frac <- ggplot(summary_subspec, aes(x = subspec2, y = CAST_AF))+
+  #ggbeeswarm::geom_beeswarm(aes(color = replicate))
+  geom_boxplot(aes(fill = replicate), outlier.colour = NA)+
+  scale_fill_manual(values = replicate_colors, limits = force,
+                    breaks = c("rep3","rep1","rep2","nuc3","nuc2"))+
+  theme_bw()+
+  coord_flip()+
+  labs(y = "castaneus allele fraction")+
+  theme(axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
+
+
+# overall CAST allele fraction
+overall_CAST_allele_freq <- csc_full %>% 
+  filter(SNPisALT == "CAST") %>% 
+  group_by(replicate) %>% 
+  summarise(nSNP = length(unique(position)),
+            nGene = length(unique(ENSEMBL)),
+            nCount = sum(DP),
+            nCount_CAST = sum(AD),
+            CAST_AF = nCount_CAST / nCount)
+
+p.overall_allele_frac <- overall_CAST_allele_freq %>% 
+  mutate(castaneus = CAST_AF,
+         domesticus = 1-CAST_AF,
+          replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
+  pivot_longer(c(castaneus,domesticus), names_to = "subspecies", values_to = "allele fraction") %>% 
+  mutate(subspecies = factor(subspecies, levels = c("domesticus", "castaneus"))) %>% 
+  ggplot(aes(x = replicate, y = `allele fraction`, fill = subspecies))+
+    geom_col(position = "stack")+
+    scale_fill_manual(values = c("#D05957","#97B4DD"), breaks = c("castaneus", "domesticus"))+
+    coord_flip()+
+    theme_bw()+
+    theme(legend.position = "top", legend.title = element_blank(), axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
+
+p.allele_frac <- plot_grid(p.subspec_CAST_frac, p.overall_allele_frac,
+          nrow = 1, labels = c("A","B"), rel_widths = c(1,0.6))
+
+p.allele_frac
+
+#ggsave("figures/Suppl_figure_CrossCont.pdf", p.allele_frac, width = 10, height = 3.5)
+```

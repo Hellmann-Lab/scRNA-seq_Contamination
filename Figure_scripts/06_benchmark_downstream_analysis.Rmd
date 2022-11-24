@@ -6,7 +6,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE} 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
 
 library(tidyverse)
@@ -126,8 +126,6 @@ plot_UMAP <- function(seurat, color_by = "celltype", colors, plot_legend = F, na
 p.UMAPs_ct <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), names(seu_list_rep2)),
                             function(x){plot_UMAP(seu_list_rep2[[x]], colors = denisenko_colors,name = x)}),
           nrow = 1)
-
-p.UMAPs_ct
 ```
 
 ### Figure 6B: UMAP with Slc34a1 expression before and after correction
@@ -165,8 +163,6 @@ p.UMAPs_marker <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), nam
                                 theme(strip.background = element_blank(),strip.text.x = element_blank())
                                 }),
           nrow = 1)
-
-p.UMAPs_marker
 ```
 
 ### Figure 6C: Expression fraction
@@ -288,8 +284,6 @@ p.cluster_evaluation_range <- inp %>%
       theme_bw()+
       labs(y = "scaled difference to score(uncorrected)")+
           theme(axis.title.y = element_blank(), axis.text.x = element_text(size = 6), strip.background = element_rect(fill = "white"))
-
-p.cluster_evaluation_range
 ```
 
 ### Assemble Figure 6
@@ -415,7 +409,7 @@ marker_plot_inp <- lapply(setNames(c("rep1", "rep2","rep3", "nuc2"), c("rep1", "
                       SoupX = readRDS(paste0("Snakemake_backup/benchmark/corrected/SoupX/",rep,"/res1_contAuto_cormat.RDS")))
   
   marker_df <- lapply(cormat_list, function(cor_mat){
-     cor_mat[topGenes,] %>% t() %>% data.frame() %>% rownames_to_column("cell") %>% 
+     cor_mat[topGenes,] %>% as.matrix %>% t() %>% data.frame() %>% rownames_to_column("cell") %>% 
       pivot_longer(cols = -cell, names_to = "gene", values_to = "expr") %>% 
       mutate(log_expr = log10(expr+1)) %>% 
       inner_join(cell_sample)
@@ -442,6 +436,7 @@ p.PT_heatmap_methods <- marker_plot_inp %>%
 
 #p.PT_heatmap_methods
 ```
+
 ### S11B: Overlap of top10 genes with Panglao markers
 
 ```{r panglao_suppl1}
