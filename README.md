@@ -15,15 +15,14 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 
 ## Analysis
 
-Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**)
+Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**).
 
 ## Figure scripts
 
-Beyond the standardized pipeline, we summarize results and perform further analysis and create figures with regards to  
-- **01_dataset_description**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy (related to Figure 1). 
-- **02_per_cell_estimates**: Visualization of backround noise fractions per cell (related to Figure 2).
-- **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3).
-- **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4).
+- **01_dataset_description**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy (related to Figure 1, Suppl. Figure S2). 
+- **02_backgroundRNA_estimates**: Visualization of backround noise fractions per cell (related to Figure 2, Suppl. Figures S1,S3).
+- **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3, Suppl. Figures S4,S5).
+- **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4, Suppl. Figures S6,S7).
 - **05_benchmark_estimation**: Comparison of background noise estimation accuracy of different computional methods (related to Figure 5, Suppl. Figure S8)
 - **06_benchmark_downstream_analysis**: Summarizing the method comparison results on downstream analysis effect based on the Snakemake pipeline across datasets and parameter settings (related to Figure 6, Suppl. Figures S9-13). 
 
