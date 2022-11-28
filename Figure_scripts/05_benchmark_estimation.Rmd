@@ -30,7 +30,7 @@ denisenko_colors <- setNames(
 ### Figure 5A: Global per cell estimation
 
 ```{r estimation_accuracy}
-df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
+df_eval_metrics <- readRDS("Analysis/files/benchmark_metrics.RDS")
 
 # **** Global estimates of background RNA per cell #####
 ### Import per cell estimates of different methods
@@ -128,7 +128,7 @@ p.est_accuracy
 ## SUPPL. FIGURE 8: Estimation accuracy per cell type 
 
 ```{r cont_per_celltype, fig.width=12, fig.height=3.5}
-cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
 
 pC_est <- perCell_methods_df %>%  
   left_join(cell_metadata) %>% 

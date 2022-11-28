@@ -89,7 +89,7 @@ p.expr_frac_Slc34a1 <- expression_fraction %>%
 ### Figure 4D: Contamination fraction of Slc34a1
 
 ```{r cont_frac}
-cell_metadata <- readRDS(file = "Extra_analyses/cell_metadata.RDS")
+cell_metadata <- readRDS(file = "Analysis/files/cell_metadata.RDS")
 
 source("genotype_estimation/genotype_estimation_functions.R")
 
@@ -226,7 +226,7 @@ PT_markers_df <- inner_join(DE_PT_markers, expression_fraction) %>%
          replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3", "nuc2")))
 
 # load top genes obtained by sorting by average exression in benchmark_comparison script
-topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
+topGenes <- readRDS("Analysis/files/top10_PT_markers.RDS")
 
 PT_markers_top <- PT_markers_df %>% filter(gene %in% topGenes)
 

@@ -27,7 +27,7 @@ replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "dark
 ## FIGURE 2: Background noise across replicates
 
 ```{r load_data}
-cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
 
 cell_metadata <- cell_metadata %>% 
    filter(Strain %in% c("CAST", "SvImJ", "BL6")) %>% 
@@ -183,7 +183,7 @@ p.estimation_confidence
 ## SUPPL. FIGURE S3: Detection of cross genotype contamination (CAST allele frequency)
 
 ```{r, fig.width=10, fig.height=3.5}
-cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
 csc_full <- bind_rows(csc_list, .id = "replicate")
 # Filtering: remove intergenic variants & empty droplets/bad cells
 csc_full <- filter(csc_full, 

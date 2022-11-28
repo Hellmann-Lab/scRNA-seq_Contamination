@@ -168,7 +168,7 @@ p.UMAPs_marker <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), nam
 ### Figure 6C: Expression fraction
 
 ```{r expression_frac}
-topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
+topGenes <- readRDS("Analysis/files/top10_PT_markers.RDS")
 
 l_expr_perGene <- list()
 for(method in c("raw", "CellBender", "DecontX", "SoupX")){
@@ -251,7 +251,7 @@ p.seurat_lfc_topGenes <- df_lfc_perGene_seurat %>%
 ### Figure 6E: Clustering and classification
 
 ```{r cluster_and_classification}
-df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
+df_eval_metrics <- readRDS("Analysis/files/benchmark_metrics.RDS")
 
 inp <- df_eval_metrics %>% 
   filter(default == T,
@@ -393,7 +393,7 @@ p.UMAP_slc_rep
 ### S11A: Heatmap
 
 ```{r marker_heatmap}
-cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
 
 cell_sample <- cell_metadata %>% 
   filter(Strain == "CAST", !is.na(celltype), replicate != "nuc3") %>% 
@@ -440,8 +440,8 @@ p.PT_heatmap_methods <- marker_plot_inp %>%
 ### S11B: Overlap of top10 genes with Panglao markers
 
 ```{r panglao_suppl1}
-panglao_markers <- readRDS("files/panglao_markers_Mm.RDS") 
-sigSEU<- readRDS("Extra_analyses/DE_seurat_sigUP.RDS")  %>% 
+panglao_markers <- readRDS("Analysis/files/panglao_markers_Mm.RDS") 
+sigSEU<- readRDS("Analysis/files/DE_seurat_sigUP.RDS")  %>% 
   group_by(method2,replicate) %>% 
   mutate( rnk = dense_rank(-avg_log2FC),
           panglao = gene %in% panglao_markers) %>% 

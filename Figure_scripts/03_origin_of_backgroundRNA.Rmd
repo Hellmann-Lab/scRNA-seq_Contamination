@@ -221,7 +221,7 @@ p.deconv <- all.props %>%
 ### Figure 1D: Intron fractions
 
 ```{r intron_profile}
-SNP_matrix_list <- readRDS("Extra_analyses/SNP_matrix_list_check.RDS")
+SNP_matrix_list <- readRDS("Analysis/files/SNP_matrix_list_check.RDS")
 
 calculate_intron_fractions <- function(matrices, vcf){
   data.frame(fraction = c(sum(matrices$empty[rownames(matrices$empty) %in% vcf$position[vcf$intron_variant == T], ]) / sum(matrices$empty),
