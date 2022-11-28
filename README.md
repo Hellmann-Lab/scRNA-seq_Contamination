@@ -15,7 +15,12 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 
 ## Analysis
 
-Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**).
+Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**).  
+This folder also contains some files that are necessary to reproduce the analysis and figures:   
+- **cell_metadata.RDS**: cell-wise metadata information including *replicate*, *celltype*, *Strain*, background noise level (*contPerCell_binom*) and some cell QC metrics.  
+- **benchmark_metrics.RDS**: For each combination of method (CellBender, SoupX, DecontX, raw), parameter setting and replicate this table contains a collection of metrics to evaluate the performance in estimating background noise levels and improving downstream analysis after correction. 
+- Proximal tubule cells markers: 1) Downloaded from [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27Proximal%20tubule%20cells%27) that were detected (**panglao_markers_Mm.RDS**) and the top10 markers with the highest average expression in PT cells (**top10_PT_markers.RDS**). 2) Genes that were detected as DE between PT and other cells after correction with CellBender/SoupX/DecontX (**DE_seurat_sigUP.RDS**)
+- Stats related to informative variants and their coverage per cell (**per_cell_stats_CAST_variants.RDS, position_stats_summary.RDS**)
 
 ## Figure scripts
 
@@ -31,11 +36,11 @@ We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse 
 
 We provide files with cell type, strain and contamination information for each replicate in a zip-folder, where each contains 5 files:
 
-- filtered_feature_bc_matrix.h5 - CellRanger output, filtered count matrix
-- raw_feature_bc_matrix.h5 - CellRanger output, raw count matrix
-- seurat_CAST.RDS - Processed Seurat object with cell type annotations, *M.m. castaneus* cells only
-- seurat.RDS - Processed Seurat object with cell type annotations, all cells
-- perCell_noMito_CAST_binom.RDS - Estimated background noise levels per cell in *M.m. castaneus* cells
+- **filtered_feature_bc_matrix.h5** - CellRanger output, filtered count matrix
+- **raw_feature_bc_matrix.h5** - CellRanger output, raw count matrix
+- **seurat_CAST.RDS** - Processed Seurat object with cell type annotations, *M.m. castaneus* cells only
+- **seurat.RDS** - Processed Seurat object with cell type annotations, all cells
+- **perCell_noMito_CAST_binom.RDS** - Estimated background noise levels per cell in *M.m. castaneus* cells
 
 
 
