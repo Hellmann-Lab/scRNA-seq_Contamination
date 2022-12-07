@@ -1,0 +1,4 @@
+Building DAG of jobs...
+MissingInputException in line 67 of /data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/scRNA-seq_Contamination/Snakemake_benchmark/Snakefile:
+Missing input files for rule reformat_uncorrected:
+input/rep1/seurat.RDS

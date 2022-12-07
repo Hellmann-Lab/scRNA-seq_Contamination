@@ -1,0 +1,17 @@
+workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/scRNA-seq_Contamination/Snakemake_benchmark"
+
+# Input datasets
+dataset: ["rep1", "rep2","rep3","nuc2"]
+
+# Parameter settings for different correction methods
+cluster_res: ["Default",1,2]  # SoupX & DecontX
+
+use_empty: ["True", "False"] # DecontX
+
+set_cont: ["Auto",0.1] # SoupX
+
+total_droplets_included: [25000] # CellBender
+fpr: ["0.01", "0.05"] #CellBender
+
+# Evaluation
+method: ["raw","DecontX", "SoupX","CellBender"]

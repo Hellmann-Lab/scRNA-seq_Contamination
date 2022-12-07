@@ -1,0 +1,141 @@
+configfile: "config.yml" 
+
+workdir: "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA/scRNA-seq_Contamination/Snakemake_benchmark"
+
+rule all:
+  input: 
+      expand("benchmark/corrected/raw/{dataset}/raw_cormat.RDS", dataset = config["dataset"]),
+      "benchmark/evaluation/benchmark_metrics.RDS"
+      
+### CORRECTION METHODS ####       
+rule DecontX:
+  input: 
+      cellranger = ancient("input/{dataset}/cellranger"),
+      seurat = "input/{dataset}/seurat.RDS"
+  params:
+      cluster_res = "{cluster_res}",
+      use_empty = "{use_empty}"
+  output: 
+      cormat = "benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_cormat.RDS",
+      perCell = "benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_contPerCell.RDS"
+  shell:
+      "/opt/bin/Rscript scripts/run_DecontX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.use_empty} {output.cormat} {output.perCell}"
+      
+rule update_DecontX:
+  input: expand("benchmark/corrected/DecontX/{dataset}/res{cluster_res}_empty{use_empty}_cormat.RDS", dataset = config["dataset"], cluster_res = config["cluster_res"], use_empty = config["use_empty"])
+  output: "benchmark/corrected/DecontX/{dataset}/dummy.txt"
+  shell: "echo 'updated' >| {output}"
+
+      
+rule SoupX:
+  input: 
+      cellranger = ancient("input/{dataset}/cellranger"),
+      seurat = "input/{dataset}/seurat.RDS"
+  params:
+      cluster_res = "{cluster_res}",
+      set_cont = "{set_cont}"
+  output: 
+      cormat = "benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_cormat.RDS",
+      perCell = "benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_contPerCell.RDS"     
+  shell:
+      "/opt/bin/Rscript scripts/run_SoupX.R {input.cellranger} {input.seurat} {params.cluster_res} {params.set_cont} {output.cormat} {output.perCell}"
+
+rule update_SoupX:
+  input: expand("benchmark/corrected/SoupX/{dataset}/res{cluster_res}_cont{set_cont}_cormat.RDS", dataset = config["dataset"], cluster_res = config["cluster_res"][config["cluster_res"] != "Default"], set_cont = config["set_cont"])
+  output: "benchmark/corrected/SoupX/{dataset}/dummy.txt"
+  shell: "echo 'updated' >| {output}"
+  
+rule CellBender: 
+  input: 
+      cellranger = ancient("input/{dataset}/cellranger"),
+      seurat = "input/{dataset}/seurat.RDS"
+  params: 
+      total_droplets_included = "{total_droplets_included}",
+      fpr = "{fpr}"
+  output: 
+      CB_out = "benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}/cormat.h5",
+      cormat = "benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_cormat.RDS",
+      perCell = "benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_contPerCell.RDS"
+  shell:
+      "/opt/bin/Rscript scripts/run_CellBender.R {input.cellranger} {input.seurat} {params.total_droplets_included} {params.fpr} {output.CB_out} {output.cormat} {output.perCell}"
+      
+rule update_CellBender:
+  input: expand("benchmark/corrected/CellBender/{dataset}/fpr{fpr}_total{total_droplets_included}_cormat.RDS", dataset = config["dataset"], fpr = config["fpr"], total_droplets_included = config["total_droplets_included"])
+  output: "benchmark/corrected/CellBender/{dataset}/dummy.txt"
+  shell: "echo 'updated' >| {output}"
+  
+rule reformat_uncorrected:
+  input: 
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+       cormat = "benchmark/corrected/raw/{dataset}/raw_cormat.RDS"
+  shell: 
+       "/opt/bin/Rscript scripts/reformat_uncorrected.R {input.seurat} {output.cormat}"
+
+rule update_raw:
+  input: "benchmark/corrected/raw/{dataset}/raw_cormat.RDS"
+  output: "benchmark/corrected/raw/{dataset}/dummy.txt"
+  shell: "touch {output}"   
+
+
+### EVALUATION #####
+      
+rule evaluate_estimation_accuracy:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/dummy.txt",
+      genotype_estimation_dir = "genotype_estimation/{dataset}",
+  output: 
+      estimation_accuracy = "benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_estimation_accuracy.R {input.corrected_dir} {input.genotype_estimation_dir} {output.estimation_accuracy}"
+      
+rule evaluate_clustering_and_classification:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/dummy.txt",
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+      cluster_evaluation_external = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS",
+      cluster_evaluation_internal = "benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS",
+      classification_evaluation = "benchmark/evaluation/{method}/{dataset}/classification_evaluation.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_clustering_and_classification.R {input.corrected_dir} {input.seurat} {output.cluster_evaluation_external} {output.cluster_evaluation_internal} {output.classification_evaluation}"
+      
+rule evaluate_kNN_overlap:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/dummy.txt",
+      reference_kNN = "input/{dataset}/kNN_reference.RDS"
+  output: 
+      kNN_overlap = "benchmark/evaluation/{method}/{dataset}/kNN_overlap.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_kNN_overlap.R {input.corrected_dir} {input.reference_kNN} {output.kNN_overlap}"
+      
+rule evaluate_markers:
+  input:
+      corrected_dir = "benchmark/corrected/{method}/{dataset}/dummy.txt",
+      seurat = "input/{dataset}/seurat.RDS"
+  output: 
+      differential_expression_seurat = "benchmark/evaluation/{method}/{dataset}/differential_expression_seurat.RDS",
+      expression_fraction_PT_markers = "benchmark/evaluation/{method}/{dataset}/expression_fraction_PT_markers.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/evaluate_markers.R {input.corrected_dir} {input.seurat} {output.differential_expression_seurat} {output.expression_fraction_PT_markers}"
+      
+rule combine_results: 
+  input: 
+      estimation_accuracy = expand("benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS", dataset = config["dataset"], method = config["method"][1:]),
+      cluster_evaluation_internal = expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS", dataset = config["dataset"], method = config["method"]),
+      cluster_evaluation_external = expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS", dataset = config["dataset"], method = config["method"]),
+      kNN_overlap = expand("benchmark/evaluation/{method}/{dataset}/kNN_overlap.RDS", dataset = config["dataset"], method = config["method"]),
+      expr_fraction = expand("benchmark/evaluation/{method}/{dataset}/expression_fraction_PT_markers.RDS", dataset = config["dataset"], method = config["method"]),
+      marker_lfc = expand("benchmark/evaluation/{method}/{dataset}/differential_expression_seurat.RDS", dataset = config["dataset"], method = config["method"])
+  params:
+      estimation_accuracy = ",".join(expand("benchmark/evaluation/{method}/{dataset}/estimation_accuracy.RDS", dataset = config["dataset"], method = config["method"][1:])),
+      cluster_evaluation_internal = ",".join(expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_internal.RDS", dataset = config["dataset"], method = config["method"])),
+      cluster_evaluation_external = ",".join(expand("benchmark/evaluation/{method}/{dataset}/cluster_evaluation_external.RDS", dataset = config["dataset"], method = config["method"])),
+      kNN_overlap = ",".join(expand("benchmark/evaluation/{method}/{dataset}/kNN_overlap.RDS", dataset = config["dataset"], method = config["method"])),
+      expr_fraction = ",".join(expand("benchmark/evaluation/{method}/{dataset}/expression_fraction_PT_markers.RDS", dataset = config["dataset"], method = config["method"])),
+      marker_lfc = ",".join(expand("benchmark/evaluation/{method}/{dataset}/differential_expression_seurat.RDS", dataset = config["dataset"], method = config["method"]))
+  output: 
+      "benchmark/evaluation/benchmark_metrics.RDS"
+  shell: 
+      "/opt/bin/Rscript scripts/combine_results.R {params.estimation_accuracy} {params.cluster_evaluation_internal} {params.cluster_evaluation_external} {params.kNN_overlap} {params.expr_fraction} {params.marker_lfc} {output}"
+      
