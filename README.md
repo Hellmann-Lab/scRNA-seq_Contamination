@@ -13,6 +13,28 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 - **applying different correction methods:** We compare three methods that are designed to remove noise originating from ambient/ background RNA: [CellBender](https://www.biorxiv.org/content/10.1101/791699v1), [SoupX](https://doi.org/10.1093/gigascience/giaa151) and [DecontX](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1950-6) in a range of different parameter settings. 
 - **evaluation of correction performance:** We evaluated the output of each method by comparing to our genotype based estimations and calculating metrics to assess denoising performance.
 
+## Snakemake_benchmark
+
+Since you might not be interested in running the whole pipeline from start to finish, we provide a reduced version of the workflow here that only covers **benchmarking: application of different methods & performance evaluation**.   
+To complete the input for this pipeline, some bigger files have to downloaded from [zenodo](https://zenodo.org/record/7328632#.Y3YMtOzML0s) (see next chapter): Please copy for each dataset the files `seurat.RDS` and `seurat_CAST.RDS` into the folder `input/{dataset}` and the files `filtered_feature_bc_matrix.h5` and `raw_feature_bc_matrix.h5` into a subfolder `input/{dataset}/cellranger`.  
+The `config.yml` file can be modified to select benchmarking datasets, methods and parameter settings. Each method is applied to the selected benchmark datasets for background noise corrections and the outputs are evaluated with several evaluation metrics described in the manuscript: 
+
+![workflow](https://github.com/Hellmann-Lab/scRNA-seq_Contamination/blob/main/Snakemake_benchmark/rulegraph.svg?raw=true)
+
+If you want to add and evaluate a new method, this can be achieved by adding a new script and rule to the Snakefile that produces as output a denoised count matrix (`benchmark/corrected/{method}/{dataset}/{parameter_setting}_cormat.RDS`) and a table with estimated background noise levels per cell (`benchmark/corrected/{method}/{dataset}/{parameter_setting}_contPerCell.RDS`), which are required for all evaluation steps. 
+
+
+## Benchmark Data availability
+We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse strains (BL6, SVLMJ, CAST). The data can be downloaded at [zenodo](https://zenodo.org/record/7328632#.Y3YMtOzML0s).
+
+We provide files with cell type, strain and contamination information for each replicate in a zip-folder, where each contains 5 files:
+
+- **filtered_feature_bc_matrix.h5** - CellRanger output, filtered count matrix
+- **raw_feature_bc_matrix.h5** - CellRanger output, raw count matrix
+- **seurat_CAST.RDS** - Processed Seurat object with cell type annotations, *M.m. castaneus* cells only
+- **seurat.RDS** - Processed Seurat object with cell type annotations, all cells
+- **perCell_noMito_CAST_binom.RDS** - Estimated background noise levels per cell in *M.m. castaneus* cells
+
 ## Analysis
 
 Beyond the standardized pipeline, we perform further analysis to compare empty droplet, contamination and endogenous profiles (**Deconvolution**) and summarize evaluation metrics of the method benchmark (**Benchmark**).  
@@ -30,17 +52,3 @@ This folder also contains some files that are necessary to reproduce the analysi
 - **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4, Suppl. Figures S6,S7).
 - **05_benchmark_estimation**: Comparison of background noise estimation accuracy of different computional methods (related to Figure 5, Suppl. Figure S8)
 - **06_benchmark_downstream_analysis**: Summarizing the method comparison results on downstream analysis effect based on the Snakemake pipeline across datasets and parameter settings (related to Figure 6, Suppl. Figures S9-13). 
-
-## Benchmark Data availability
-We analysed 5 mouse 10X experiments. Each is a mix of kidney cells from 3 mouse strains (BL6, SVLMJ, CAST). The data can be downloaded at [zenodo](https://zenodo.org/record/7328632#.Y3YMtOzML0s).
-
-We provide files with cell type, strain and contamination information for each replicate in a zip-folder, where each contains 5 files:
-
-- **filtered_feature_bc_matrix.h5** - CellRanger output, filtered count matrix
-- **raw_feature_bc_matrix.h5** - CellRanger output, raw count matrix
-- **seurat_CAST.RDS** - Processed Seurat object with cell type annotations, *M.m. castaneus* cells only
-- **seurat.RDS** - Processed Seurat object with cell type annotations, all cells
-- **perCell_noMito_CAST_binom.RDS** - Estimated background noise levels per cell in *M.m. castaneus* cells
-
-
-
