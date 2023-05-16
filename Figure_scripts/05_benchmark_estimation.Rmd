@@ -20,8 +20,8 @@ replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey"),
                              c("rep1", "rep2", "rep3", "nuc2")) 
 
 denisenko_colors <- setNames(
-  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
-  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
+ c("#88CCEE", "#6699CC",  "#44AA99","#117733", "#CC6677",  "#661100","#DDCC77", "#882255", "#AA4499", "#332288", "#999933", "#888888","lightgrey"),
+  c("PT",      "CD_IC" ,   "CD_PC", "CD_Trans" , "CNT" ,    "DCT",     "Endo",    "Fib",     "aLOH",   "dLOH",     "MC" ,    "Podo",   "Immune"))
 ```
 
 
@@ -30,7 +30,7 @@ denisenko_colors <- setNames(
 ### Figure 5A: Global per cell estimation
 
 ```{r estimation_accuracy}
-df_eval_metrics <- readRDS("Analysis/files/benchmark_metrics.RDS")
+df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
 
 # **** Global estimates of background RNA per cell #####
 ### Import per cell estimates of different methods
@@ -121,14 +121,14 @@ p.est_accuracy <- plot_grid(
 
 p.est_accuracy
 
-#ggsave("figures/Figure5_estimation_accuracy.pdf",p.est_accuracy,  width = 5, height = 4.5)
+ggsave("figures/figures_final/Figure5.pdf",p.est_accuracy,  width = 5, height = 4.5)
 ```
 
 
-## SUPPL. FIGURE 8: Estimation accuracy per cell type 
+## SUPPL. FIGURE 10: Estimation accuracy per cell type 
 
 ```{r cont_per_celltype, fig.width=12, fig.height=3.5}
-cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
 
 pC_est <- perCell_methods_df %>%  
   left_join(cell_metadata) %>% 
@@ -150,5 +150,5 @@ p.est_per_celltype <- ggplot(pC_est, aes(x = method2, y= cont, fill = celltype))
 
 p.est_per_celltype
 
-#ggsave("figures/Suppl_figure_estimation_accuracy_perCT.pdf",p.est_per_celltype,  width = 12, height = 3.5)
+ggsave("figures/figures_final/Suppl_figure_S10_estimation_accuracy_perCT.pdf",p.est_per_celltype,  width = 12, height = 3.5)
 ```

@@ -20,8 +20,8 @@ strain_colors = setNames(c("#D05957", "#4189C4", "#97B4DD", "lightgrey"),
                          c("CAST", "BL6", "SvImJ", "doublet"))
 
 denisenko_colors <- setNames(
-  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
-  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
+ c("#88CCEE", "#6699CC",  "#44AA99","#117733", "#CC6677",  "#661100","#DDCC77", "#882255", "#AA4499", "#332288", "#999933", "#888888","lightgrey"),
+  c("PT",      "CD_IC" ,   "CD_PC", "CD_Trans" , "CNT" ,    "DCT",     "Endo",    "Fib",     "aLOH",   "dLOH",     "MC" ,    "Podo",   "Immune"))
 
 replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "darkgrey"), 
                              c("rep1", "rep2", "rep3", "nuc2", "nuc3"))
@@ -31,7 +31,7 @@ replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "dark
 
 ```{r load_data}
 # Load per cell metadata 
-cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
 
 cell_metadata <- cell_metadata %>% 
    filter(Strain != "unassigned") %>% 
@@ -66,7 +66,7 @@ p.strain_composition <- cell_metadata %>%
 ### Figure 1C: Strain specific variants
 
 ```{r strain_variants}
-position_stats_summary <- readRDS("Analysis/files/position_stats_summary.RDS")
+position_stats_summary <- readRDS("Extra_analyses/position_stats_summary.RDS")
 
 p.pie_nPos <- ggplot(position_stats_summary, aes(x = "", y = nPos, fill = strain_specific))+
   geom_bar(stat = "identity", width = 1, color = "white")+
@@ -83,7 +83,7 @@ p.pie_nPos <- ggplot(position_stats_summary, aes(x = "", y = nPos, fill = strain
 ### Figure 1D: Coverage of informative variants
 
 ```{r variant_coverage}
-per_cell_stats <- readRDS("Analysis/files/per_cell_stats_CAST_variants.RDS")
+per_cell_stats <- readRDS("Extra_analyses/per_cell_stats_CAST_variants.RDS")
 
 per_cell_stats_CAST <-  filter(per_cell_stats, Strain == "CAST") %>% 
   mutate(replicate = factor(replicate, levels = c("nuc3","nuc2", "rep3", "rep2", "rep1")))
@@ -186,12 +186,12 @@ p.figure1 <- plot_grid(
 
 p.figure1
 
-#ggsave("figures/Figure1.pdf", p.figure1, width = 10, height = 10)
+ggsave("figures/figures_final/Figure1.pdf", p.figure1, width = 10, height = 10)
 ```
 
 
 
-## SUPPL. FIGURE S2: strain and cell type composition per replicate
+## SUPPL. FIGURE S3: strain and cell type composition per replicate
 
 ```{r suppl_fig1, fig.width=14, fig.height=8}
 # load seurat objects
@@ -258,5 +258,6 @@ p.UMAPs <- plot_grid(
 
 p.UMAPs
 
-#ggsave("figures/Suppl_figure1.pdf", p.UMAPs, width = 14, height = 8)
+ggsave("figures/figures_final/Suppl_figure_S3_UMAPs.pdf", p.UMAPs, width = 14, height = 8)
 ```
+

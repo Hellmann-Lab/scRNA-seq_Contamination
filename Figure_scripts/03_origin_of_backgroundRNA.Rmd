@@ -2,7 +2,7 @@
 title: "Origin of background RNA"
 output: html_document
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -17,14 +17,18 @@ domesticus_colors = setNames(c("#271758", "#887BAF", "#C4BBDE", "lightgrey"),
                            c("endo", "empty", "cont", "other"))
 
 
-profile_colors = setNames(c("red",  "purple", "orange", "lightgrey"),
-                           c("endo", "empty", "cont", "other"))
+profile_colors = setNames(c("red",  "orange","purple",  "lightgrey"),
+                           c("endo","cont", "empty",  "other"))
+
+denisenko_colors <- setNames(
+ c("#88CCEE", "#6699CC",  "#44AA99","#117733", "#CC6677",  "#661100","#DDCC77", "#882255", "#AA4499", "#332288", "#999933", "#888888","lightgrey"),
+  c("PT",      "CD_IC" ,   "CD_PC", "CD_Trans" , "CNT" ,    "DCT",     "Endo",    "Fib",     "aLOH",   "dLOH",     "MC" ,    "Podo",   "Immune"))
 ```
 
 
 ## FIGURE 3: Characterization of ambient RNA in cells and empty droplets
 
-### Figure 3A: UMI curve with definition of cells and empty droplets
+### Figure 3A-C: UMI curve with definition of cells and empty droplets
 
 UMI curve of total counts:
 
@@ -44,13 +48,14 @@ lowest_cell <- assignment_rep2 %>% filter(isCell == T) %>% tail(1) %>% pull(inde
 p.UMI_plot <-  ggplot(assignment_rep2, aes(x = index, y = nUMI, color = isCell))+
     geom_point(size = 0.2, color = "black")+
     scale_y_log10(limits = c(10, 200000))+
+    scale_x_continuous(limits = c(0,103000))+
     annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
     annotate(x = 9000, y = 180000, geom = "text", label = "cells")+
     annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
     annotate(x = 58000, y = 180000, geom = "text", label = "empty droplets")+
     labs(x = "Droplet rank", y = "Total UMI counts")+
     theme_bw()+
-    theme(legend.position = c(0.85,0.8))+ 
+    theme(legend.position = c(0.85,0.8), axis.title.y = element_text(size = 9))+ 
     guides(colour = guide_legend(override.aes = list(size=4)))
 ```
 
@@ -82,16 +87,17 @@ perBC <- csc_list$rep2 %>%
                               T ~ "other"))  %>% 
   left_join(dplyr::select(assignment_rep2, BC, index), by = c("cell" = "BC"))
 
-p.domesticus <- ggplot(perBC, aes(x = index, y = domesticus, color = category))+
+p.domesticus <- ggplot(mutate(perBC, category = factor(category, levels = c("endo","cont","empty","other"))),
+                       aes(x = index, y = domesticus, color = category))+
     geom_point(size = 0.1, alpha = 0.1)+
     annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
     annotate(xmin = 40000, xmax = 75000, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
     #geom_point(aes(y = total), color = "black", size = 0.1)+
     scale_y_log10(limits = c(10,10000))+
     scale_color_manual(values = profile_colors)+
-    scale_x_continuous(limits = c(0,100000))+
+    scale_x_continuous(limits = c(0,103000))+
     theme_bw()+
-    theme(legend.position = c(0.85,0.55), legend.title = element_blank())+
+    theme(legend.position = c(0.85,0.55), legend.title = element_blank(), axis.title.y = element_text(size = 9))+
     labs(x = "Droplet rank", y = expression(paste("UMI counts (", italic("M.m.domesticus "), "alleles)")))+# "UMI counts (M.m.domesticus alleles)")+
     guides(colour = guide_legend(override.aes = list(size=3, alpha = 1)))
 
@@ -102,7 +108,37 @@ p.UMI_curve_combined <- plot_grid(p.UMI_plot+theme(axis.title.x = element_blank(
           rel_heights = c(1,1.2))
 ```
 
-### Figure 3B: Correlation of pseudobulk profiles
+```{r UMI_counts_per_profile}
+p.domesticus_per_category <- perBC %>% 
+  filter(category != "other") %>% 
+  mutate(category = factor(category, levels = c("endo", "cont", "empty"))) %>% 
+  ggplot(aes(x = category, y = domesticus, fill = category))+
+    geom_boxplot(outlier.size = 0.1)+ 
+    scale_y_log10(limits = c(10,10000))+
+    scale_fill_manual(values = profile_colors)+
+    theme_bw()+
+    labs(x = "", y = expression(paste("UMI counts (", italic("M.m. domesticus "), "alleles)")))+
+    theme(legend.position = "none", 
+          axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+#p.UMI_curve_combined_new <- plot_grid(
+  p1 <- p.UMI_plot+theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(0, 0, 0, 0), "cm"))
+  p2 <- get_legend(p.domesticus+theme(legend.position = "right"))
+  p3 <- p.domesticus+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"), legend.position = "none") 
+  p4 <- p.domesticus_per_category+theme(plot.margin = unit(c(0, 0, 0, 0), "cm")) 
+
+p.UMI_curve_combined_new <- p1+ labs(tag = 'A')+p2 +p3+ labs(tag = 'B')+p4+ labs(tag = 'C') + patchwork::plot_layout(widths = c(1,0.3)) + patchwork::plot_annotation()
+
+p.UMI_curve_combined_new
+
+plot_grid(p1,p2,p3,p4, nrow = 2, align = "hv", axis = "lrtb", rel_widths = c(1,0.3))
+
+
+```
+
+### Figure 3D: Correlation of pseudobulk profiles
 
 ```{r cor, fig.width=4, fig.height=3}
 cor_list <- list()
@@ -133,7 +169,7 @@ p.cor_flip <- cor_df %>%
 
 ```
 
-### Figure 3C: Deconvolutoin - cell type proportions
+### Figure 3E: Deconvolution - cell type proportions
 
 ```{r deconvolution}
 res.endo.dat <- readRDS("deconvolution_new/output/scdc/summaries/CZI_kidney_mouse_10XChromium_sc_CAST_singleref_endo_prop.rds")
@@ -187,10 +223,6 @@ all.props<-bind_rows(all.endo,all.cont, all.empty) %>%
 Plot proportions: 
 
 ```{r plot_prop}
-celltype_colors <- setNames(
-  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
-  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
-
 # Two example replicates: 
 p.deconv <- all.props %>% 
   filter(Type %in% c("Estimated", "Empty", "Contamination"),
@@ -201,7 +233,7 @@ p.deconv <- all.props %>%
 
   ggplot(aes(x = category, y = Proportion, fill = forcats::fct_rev(celltype))) + 
     geom_col(color = 'black', lwd=0.1) + 
-    scale_fill_manual(values = celltype_colors) +
+    scale_fill_manual(values = denisenko_colors) +
     guides(fill = guide_legend(nrow = 2)) +
     scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
     coord_flip() +
@@ -212,16 +244,16 @@ p.deconv <- all.props %>%
           legend.title = element_blank(),
           legend.text = element_text(size = 8),
           legend.key.size = unit(0.5, 'cm'),
-          axis.text = element_text(size = 10),
-          axis.title = element_text(size = 12, face='bold'),
-          strip.text = element_text(size = 12, face = 'bold'),
+          #axis.text = element_text(size = 10),
+          #axis.title = element_text(size = 11, face = "bold"),
+          strip.text = element_text(size = 11),
           strip.background = element_blank()) 
 ```
 
-### Figure 1D: Intron fractions
+### Figure 3F: Intron fractions
 
 ```{r intron_profile}
-SNP_matrix_list <- readRDS("Analysis/files/SNP_matrix_list_check.RDS")
+SNP_matrix_list <- readRDS("Extra_analyses/SNP_matrix_list_check.RDS")
 
 calculate_intron_fractions <- function(matrices, vcf){
   data.frame(fraction = c(sum(matrices$empty[rownames(matrices$empty) %in% vcf$position[vcf$intron_variant == T], ]) / sum(matrices$empty),
@@ -236,7 +268,7 @@ intron_frac <-  lapply(SNP_matrix_list, function(x){
 
 
 p.intron_frac <- intron_frac %>% 
-  mutate(profile = factor(profile, levels = c("empty", "cont", "endo")),
+  mutate(profile = factor(profile, levels = c("endo","cont", "empty")),
          replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
   ggplot(aes(x = replicate, y = fraction, color = profile))+
   coord_flip()+
@@ -249,32 +281,61 @@ p.intron_frac <- intron_frac %>%
 
 ### Assemble Figure 3
 
-```{r figure, fig.width=12, fig.height=5.5}
-p.figure4 <- plot_grid(
-  p.UMI_curve_combined,
+```{r 3withBox, fig.width=13, fig.height=5.8}
+p.figure3 <- plot_grid(
+  plot_grid(NULL, p.UMI_curve_combined_new, nrow = 2, rel_heights = c(0.02,1)),
   plot_grid(
-    plot_grid(p.cor_flip+theme(legend.position = "none"),
-            p.intron_frac+theme(legend.position = "none", legend.title= element_blank()),
+    plot_grid(p.cor_flip+theme(legend.position = "none")+ labs(tag = 'D'),
+            p.intron_frac+theme(legend.position = "none", legend.title= element_blank())+ labs(tag = 'F'),
             plot_grid(NULL,
                       get_legend(p.cor_flip),#+theme(legend.justification=c(0,0)), 
                       get_legend(p.intron_frac),#+theme(legend.justification=c(0,0)),
                       NULL,
-                      ncol = 1, align = "v", rel_heights = c(0.4,1,1,0.2)), 
-            nrow = 1, rel_widths = c(1,1,0.63), align = "hv", labels = c("B", "D")),
-    p.deconv+theme(legend.position = "right")+guides(fill = guide_legend(ncol = 2)),
-    nrow = 2, labels = c("","C")), 
-  nrow = 1, rel_widths = c(1,1.7), scale = c(0.9,1), labels = c("A","")
+                      ncol = 1, align = "v", rel_heights = c(0.2,1.8,1,0.2)), 
+            nrow = 1, rel_widths = c(1,1,0.63), align = "hv"),
+    p.deconv+theme(legend.position = "right")+guides(fill = guide_legend(ncol = 2))+ labs(tag = 'E'),
+    nrow = 2, rel_heights = c(1,1.19)),
+  nrow = 1, rel_widths = c(1.5,1.7), scale = c(1,0.94)#, labels = c("A","")
 )
 
-p.figure4
-
-#ggsave("figures/Figure3_cont_origin.png", p.figure4, height = 5.5, width = 12)
+ggsave("figures/Figure3_cont_origin_revised.png", p.figure3, height = 5.8, width = 13, bg='#ffffff')
 ```
 
-## SUPPL. FIGURE S4: UMI curves for all replicates
 
-```{r UMI_curve_replicates}
-plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
+## SUPPL. FIGURE S5: UMI curves for all replicates
+
+Numbers of UMI counts in cont and empty droplets
+
+```{r}
+perBC_list <- list()
+
+for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+  raw_mat <- Seurat::Read10X_h5(paste0("Snakemake_backup/input/",rep,"/cellranger/raw_feature_bc_matrix.h5"))
+  cell_BC <- read.table(paste0("Snakemake_backup/input/",rep,"/cell_BC.txt"))$V1
+  
+  assignment <- data.frame(BC = colnames(raw_mat), nUMI = Matrix::colSums(raw_mat)) %>% 
+    arrange(desc(nUMI)) %>% 
+    mutate(index = row_number()) %>% 
+    dplyr::filter(index <= 100000) %>% 
+    mutate(isCell = ifelse(BC %in% cell_BC, T, F))
+  
+  perBC_list[[rep]] <- csc_list[[rep]] %>% 
+    group_by(cell_assignment, Strain, cell, nUMI) %>% 
+    dplyr::summarize(castaneus = sum(AD), 
+                     domesticus = sum(DP) - sum(AD),
+                     total = sum(DP)) %>% 
+    mutate(category = case_when(Strain == "CAST" ~ "cont",
+                                Strain %in% c("SvImJ","BL6") ~ "endo",
+                                cell_assignment == "empty" ~ "empty",
+                                T ~ "other"))  %>% 
+    left_join(dplyr::select(assignment, BC, index), by = c("cell" = "BC"))
+}
+```
+
+### Suppl. figure S5A-E: UMI curves and profile definition
+
+```{r}
+plot_UMI_curves_rev <- function(rep, empty_min, empty_max, no_y_lab = F, x_cells = 9000, x_empty = 58000){
   raw_mat <- Seurat::Read10X_h5(paste0("Snakemake_backup/input/",rep,"/cellranger/raw_feature_bc_matrix.h5"))
   cell_BC <- read.table(paste0("Snakemake_backup/input/",rep,"/cell_BC.txt"))$V1
   
@@ -291,10 +352,11 @@ plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
       ggplot(aes(x = index, y = nUMI, color = isCell))+
         geom_point(size = 0.2, color = "black")+
         scale_y_log10(limits = c(10, 200000))+
+        scale_x_continuous(limits = c(0,103000))+
         annotate(xmin = 0, xmax = lowest_cell, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "red")+
-        annotate(x = 9000, y = 180000, geom = "text", label = "cells")+
+        annotate(x = x_cells, y = 180000, geom = "text", label = "cells")+
         annotate(xmin = empty_min, xmax = empty_max, ymin = 0, ymax = Inf, geom = "rect", alpha = 0.1, fill = "blue")+
-        annotate(x = 58000, y = 180000, geom = "text", label = "empty droplets")+
+        annotate(x = x_empty, y = 180000, geom = "text", label = "empty droplets")+
         labs(x = "Droplet rank", y = "Total UMI counts")+
         theme_bw()+
         theme(legend.position = c(0.85,0.8))+ 
@@ -302,16 +364,8 @@ plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
         ggtitle(rep)
   
   print(paste0("summarizing allele counts in replicate ", rep))
-  perBC <- csc_list[[rep]] %>% 
-    group_by(cell_assignment, Strain, cell, nUMI) %>% 
-    dplyr::summarize(castaneus = sum(AD), 
-              domesticus = sum(DP) - sum(AD),
-              total = sum(DP)) %>% 
-    mutate(category = case_when(Strain == "CAST" ~ "cont",
-                                Strain %in% c("SvImJ","BL6") ~ "endo",
-                                cell_assignment == "empty" ~ "empty",
-                                T ~ "other"))  %>% 
-    left_join(dplyr::select(assignment, BC, index), by = c("cell" = "BC"))
+  perBC <- perBC_list[[rep]] %>%  
+    left_join(dplyr::select(assignment, BC, index), by = c("cell" = "BC", "index"))
   
   p.domesticus <- ggplot(perBC, aes(x = index, y = domesticus, color = category))+
       geom_point(size = 0.1, alpha = 0.1)+
@@ -320,7 +374,7 @@ plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
       #geom_point(aes(y = total), color = "black", size = 0.1)+
       scale_y_log10(limits = c(10,10000))+
       scale_color_manual(values = profile_colors)+
-      scale_x_continuous(limits = c(0,100000))+
+      scale_x_continuous(limits = c(0,103000))+
       theme_bw()+
       theme(legend.position = c(0.85,0.55), legend.title = element_blank())+
       labs(x = "Droplet rank", y = expression(paste("UMI counts (", italic("M.m.domesticus "), "alleles)")))+# "UMI counts (M.m.domesticus alleles)")+
@@ -341,20 +395,50 @@ plot_UMI_curves <- function(rep, empty_min, empty_max, no_y_lab = F){
 }
 
 UMI_curve_list <- list()
-UMI_curve_list$rep1 = plot_UMI_curves("rep1", empty_min = 40000, empty_max = 75000)
-UMI_curve_list$rep2 = plot_UMI_curves("rep2", empty_min = 40000, empty_max = 75000, no_y_lab = T)
-UMI_curve_list$rep3 = plot_UMI_curves("rep3", empty_min = 20000, empty_max = 60000, no_y_lab = T)
-UMI_curve_list$nuc2 = plot_UMI_curves("nuc2", empty_min = 30000, empty_max = 70000, no_y_lab = T)
-UMI_curve_list$nuc3 = plot_UMI_curves("nuc3", empty_min = 20000, empty_max = 60000, no_y_lab = T)
+UMI_curve_list$rep3 = plot_UMI_curves_rev("rep3", empty_min = 20000, empty_max = 60000, x_cells = 4000, x_empty = 40000)
+UMI_curve_list$rep1 = plot_UMI_curves_rev("rep1", empty_min = 40000, empty_max = 75000, no_y_lab = T)
+UMI_curve_list$rep2 = plot_UMI_curves_rev("rep2", empty_min = 40000, empty_max = 75000, no_y_lab = T)
+UMI_curve_list$nuc3 = plot_UMI_curves_rev("nuc3", empty_min = 20000, empty_max = 60000, x_cells = 4000, x_empty = 40000)
+UMI_curve_list$nuc2 = plot_UMI_curves_rev("nuc2", empty_min = 30000, empty_max = 70000, no_y_lab = T)
 
-p.UMI_curve_replicates <- plot_grid(plotlist = UMI_curve_list, nrow = 1 )
 
-p.UMI_curve_replicates
-
-#ggsave("figures/Suppl_figure_UMI_curves.png", p.UMI_curve_replicates, height = 5.5, width = 20)
+p.UMI_curve_replicates <- plot_grid(plotlist = c(UMI_curve_list,NULL), nrow = 2)
 ```
 
-## SUPPL. FIGURE S5: Deconvolution - cell type proportions for all replicates
+### Suppl. figure S5F: Boxplot of UMI counts per profile
+
+```{r}
+perBC_all <- bind_rows(perBC_list, .id = "replicate") %>% 
+  filter(category != "other") %>% 
+  mutate(category = factor(category, levels = c("endo", "cont", "empty")),
+        replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
+
+
+p.box_UMI_profiles <- ggplot(perBC_all, aes(x = replicate, y = domesticus, fill = category))+
+    geom_boxplot(outlier.size = 0.1)+ 
+    scale_y_log10(limits = c(10,10000))+
+    scale_fill_manual(values = profile_colors, limits = force)+
+    theme_bw()+
+    labs(x = "", y = expression(paste("UMI counts (", italic("M.m.domesticus "), "alleles)")))+
+    theme(legend.title = element_blank(), 
+          #axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 10))
+```
+
+### Cobine UMI curves and boxplot
+
+```{r}
+plotlist <- UMI_curve_list
+plotlist$umi_comp <- p.box_UMI_profiles
+
+p.UMI_curve_replicates_rev <- plot_grid(plotlist = plotlist, nrow = 2, labels = c("A","B","C","D","E","F"), scale = c(1,1,1,1,1,0.86), align = "h", axis = "tb")
+
+p.UMI_curve_replicates_rev
+
+ggsave("figures/figures_final/Suppl_figure_S5_UMI_curves_revised.png", p.UMI_curve_replicates_rev, height = 10, width = 15, bg = "white")
+```
+
+## SUPPL. FIGURE S6: Deconvolution - cell type proportions for all replicates
 
 ```{r deconvolution_all_rep, fig.width=10, fig.height=3.6}
 p.prop_allRep <- all.props %>% 
@@ -366,7 +450,7 @@ p.prop_allRep <- all.props %>%
 
   ggplot(aes(x = category, y = Proportion, fill = forcats::fct_rev(celltype))) + 
     geom_col(color = 'black', lwd=0.1) + 
-    scale_fill_manual(values = celltype_colors) +
+    scale_fill_manual(values = denisenko_colors) +
     guides(fill = guide_legend(nrow = 2)) +
     scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
     coord_flip() +
@@ -385,5 +469,5 @@ p.prop_allRep <- all.props %>%
 
 p.prop_allRep
 
-#ggsave("figures/Suppl_figure_Deconvolution_allRep.pdf", p.prop_allRep, width = 10, height = 3.6)
+ggsave("figures/figures_final/Suppl_figure_S6_deconvolution_allRep.pdf", p.prop_allRep, width = 10, height = 3.6)
 ```

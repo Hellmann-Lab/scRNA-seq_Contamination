@@ -1,0 +1,192 @@
+---
+title: "Detection of PCR chimera - Supplementary figure S7"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/data/share/htp/CZI_kidney/mouse_experiments/backgroundRNA")
+
+library(DropletUtils)
+library(tidyverse)
+library(cowplot)
+
+replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "darkgrey"), 
+                             c("rep1", "rep2", "rep3", "nuc2", "nuc3"))
+```
+
+## Identify swapping from molecule_info.h5
+
+### Load molecule info and cell metadata
+
+```{r}
+# load molecule info ####
+mol_info_list <- list()
+for(rep in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+  print(paste0("reading in molecule info of ", rep))
+  mol_info_list[[rep]] <- read10xMolInfo(paste0("Snakemake_backup/input/",rep,"/cellranger/molecule_info.h5"))
+}
+
+# load cell metadata
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+```
+
+### Identify PCR chimera
+
+Molecules with for which a barcode+UMI combination is associated with more than one gene
+
+```{r identify_chimera}
+reads_per_UMI_list <- list()
+
+for(exp in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+  print(exp)
+  reads_per_UMI_list[[exp]] <- mol_info_list[[exp]]$data %>% data.frame %>%
+    mutate(cell = paste0(cell, "-1")) %>% 
+    filter(cell %in% unique(cell_metadata$cell)) %>% 
+    group_by(cell) %>% 
+    mutate(ENSEMBL = mol_info_list[[exp]]$genes[gene],
+           chimera = ifelse(!isUnique(umi),T,F))
+}
+
+#saveRDS(reads_per_UMI_list, "Extra_analyses/swapping_analysis_files/reads_per_UMI_list.RDS")
+
+# Filter for cases in which we have at least 2 reads per BC-UMI combination (i.e. original molecule)
+reads_per_UMI_list_2read <- lapply(reads_per_UMI_list, function(x){
+  filter(x, reads > 1 | chimera == T)
+})
+```
+
+### Define CB-UMI combinations as original molecules
+
+```{r}
+perCell_swapping_list <- list()
+
+for(exp in c("rep1","rep2", "rep3", "nuc2", "nuc3")){
+  print(exp)
+  perCell_swapping_list[[exp]] <- reads_per_UMI_list_2read[[exp]] %>% 
+    select(cell, umi,chimera) %>%
+    distinct() %>% 
+    summarize(n_chimera = sum(chimera),
+              n_unique_CBUMI = sum(chimera == F),
+              n_original = n(),
+              n_total = n_chimera + n_original,
+              chimera_fraction = n_chimera / n_total)
+}
+
+
+perCell_swap <- bind_rows(perCell_swapping_list, .id = "replicate") %>% 
+  inner_join(cell_metadata) %>% 
+  filter(Strain == "CAST") %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
+```
+
+## Suppl. figure S7A: Observed chimera fraction per cell
+
+```{r observed_chimera}
+p.chimera_frac <- perCell_swap %>% 
+  ggplot(aes(x=replicate, y=chimera_fraction, fill = replicate))+
+    geom_boxplot(notch=T)+
+    scale_fill_manual(values = replicate_colors)+
+    theme_bw()+
+    theme(axis.title.x = element_blank(), legend.position = "none")+
+    labs(y = "Chimera fraction")
+```
+
+## Suppl. figure S7B: Chimera/background ratio
+
+Plot ratio of chimera fraction and estimated background noise fraction:
+
+```{r swap_background_ratio}
+p.chimera_frac_relative <- perCell_swap %>% 
+  mutate(swap_bg= ifelse(chimera_fraction>contPerCell_binom,1,chimera_fraction/contPerCell_binom)  ) %>% 
+  group_by(replicate) %>%
+  arrange(desc(swap_bg)) %>% 
+  mutate( rnk = (1:length(swap_bg))/length(swap_bg),
+          replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2"))) %>% 
+  filter(rnk>0.05) %>% 
+  ggplot(aes(x=replicate,y=swap_bg, fill = replicate))+
+    geom_boxplot(notch=T)+
+    scale_fill_manual(values = replicate_colors)+
+    theme_bw()+
+    theme(axis.title.x = element_blank(), legend.position = "none")+
+    labs(y = expression(frac("Chimera fraction","Background noise fraction")))
+```
+
+### Correlation of number of chimeras and total UMIs
+
+```{r warning=FALSE}
+perCell_swap %>% 
+  group_by(replicate) %>% 
+  summarize(`rho_abs` = cor.test(n_unique_CBUMI, n_chimera, method = "spearman")$estimate,
+            `p-value_abs` = format(cor.test(n_unique_CBUMI, n_chimera, method = "spearman")$p.value, digits = 3),
+            `rho_frac` = cor.test(chimera_fraction, n_total, method = "spearman")$estimate,
+            `p-value_frac` = format(cor.test(chimera_fraction, n_total, method = "spearman")$p.value, digits = 3)) #%>% 
+  #saveRDS("tmp/swapping_correlation.RDS")
+```
+
+## Suppl. figure S7C: Read/UMI distribution
+
+## Intersect with genotype based data
+
+```{r}
+csc_list <- list()
+for(exp in c("rep1", "rep2", "rep3", "nuc2","nuc3")){
+  print(exp)
+  csc_list[[exp]] <- readRDS(paste0("Snakemake_backup/genotype_estimation/",exp,"/csc_intermediate.RDS")) %>% 
+    filter(cell %in% cell_metadata$cell)
+}
+```
+
+Since we don't have genotyping tables per molecule (CB-UMI-gene), but only per UMI allele counts per position (CB-gene-position), we are restricted to looking at cases for which we only have one count for a gene in a cell (one CB-UMI-gene) and only one covered SNP (one CB-gene-position). For these cases the molecules from both tables are comparable.
+
+```{r width=7, height=6}
+category_colors2 = setNames(c("red",  "orange","lightblue"),
+                            c("endo","cont", "chimera"))
+
+swap_and_genotype_1UMI <- list()
+
+for(exp in c("rep1", "rep2", "rep3", "nuc2", "nuc3")){
+  print(exp)
+  swap_and_genotype_1UMI[[exp]] <- csc_list[[exp]] %>% 
+    filter(Strain == "CAST", SNPisALT == "CAST", DP == 1) %>% 
+    inner_join(reads_per_UMI_list[[exp]]) %>% 
+    distinct(cell,ENSEMBL, .keep_all = TRUE) %>% 
+    mutate(category = case_when(#AD == 0 & chimera == T ~ "background_chimera",
+                                chimera == T ~ "chimera",
+                                AD == 0 & chimera == F ~ "cont",
+                                AD == 1 & chimera == F ~ "endo"),
+           reads_per_UMI = ifelse(reads >= 4, "4+", reads))
+}
+
+swap_and_genotype_1UMI_summary <- bind_rows(swap_and_genotype_1UMI, .id = "replicate") %>% 
+  group_by(replicate, category, reads_per_UMI) %>% 
+  summarize(n = length(cell)) %>% 
+  group_by(replicate, category) %>% 
+  mutate(total = sum(n),
+         proportion = n / total,
+         #category = factor(category, levels = c("endogenous", "background", "chimera", "background_chimera")),
+         category = factor(category, levels = c("endo", "cont", "chimera")),
+         replicate = factor(replicate, levels = c("rep3",  "rep1","rep2","nuc3", "nuc2")))
+
+p.reads_per_UMI <- ggplot(swap_and_genotype_1UMI_summary, aes(x = reads_per_UMI, y = proportion, fill = category))+
+  geom_col(position = "dodge", color = "darkgrey", alpha = 0.8)+
+  scale_fill_manual(values = category_colors2, limits = force)+
+  facet_grid(~replicate)+
+  theme_bw()+
+  labs(x = "reads per UMI")+
+  theme(legend.title = element_blank())
+
+p.suppl_chimera <- plot_grid(
+  plot_grid(p.chimera_frac,
+            p.chimera_frac_relative,
+            nrow = 1, labels = c("A","B"), scale = c(0.9,0.9)),
+  p.reads_per_UMI, 
+  nrow = 2, labels = c("","C"), align = "v", rel_heights = c(1,0.8), scale = c(0.98,1)
+)
+
+p.suppl_chimera
+
+ggsave("figures/figures_final/Suppl_figure_S7_Swapping.pdf", p.suppl_chimera, width = 7, height = 6)
+```

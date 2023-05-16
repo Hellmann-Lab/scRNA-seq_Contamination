@@ -89,7 +89,7 @@ p.expr_frac_Slc34a1 <- expression_fraction %>%
 ### Figure 4D: Contamination fraction of Slc34a1
 
 ```{r cont_frac}
-cell_metadata <- readRDS(file = "Analysis/files/cell_metadata.RDS")
+cell_metadata <- readRDS(file = "Extra_analyses/cell_metadata.RDS")
 
 source("genotype_estimation/genotype_estimation_functions.R")
 
@@ -226,7 +226,7 @@ PT_markers_df <- inner_join(DE_PT_markers, expression_fraction) %>%
          replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3", "nuc2")))
 
 # load top genes obtained by sorting by average exression in benchmark_comparison script
-topGenes <- readRDS("Analysis/files/top10_PT_markers.RDS")
+topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
 
 PT_markers_top <- PT_markers_df %>% filter(gene %in% topGenes)
 
@@ -274,10 +274,12 @@ p.figure4 <- plot_grid(p.slc34a1,
                        p.box2,
                        nrow = 1, rel_widths = c(1,0.7, 0.4), labels = c("","E",""))
 p.figure4
+
+ggsave("figures/figures_final/Figure4.pdf", p.figure4, width = 13, height = 5)
 ```
 
 
-## SUPPL. FIGURE S6: Slc34a1 expression in all replicates
+## SUPPL. FIGURE S8: Slc34a1 expression in all replicates
 
 ```{r slc34a1_umaps, fig.width=8, fig.height=6}
 plot_slc_UMAP <- function(rep){
@@ -310,10 +312,10 @@ slc_UMAP_list$legend <- get_legend(plot_slc_UMAP("rep1")+theme(legend.position =
 p.slc_UMAP_replicates <- plot_grid(plotlist = slc_UMAP_list)
 
 p.slc_UMAP_replicates
-#ggsave("figures/Suppl_figure_Slc34a1_UMAP_replicates.pdf", p.slc_UMAP_replicates, width = 8, height = 6)
+ggsave("figures/figures_final/Suppl_figure_S8_Slc34a1_UMAP_replicates.pdf", p.slc_UMAP_replicates, width = 8, height = 6)
 ```
 
-## SUPPL. FIGURE S7: Heatmaps of marker genes for 4 cell types
+## SUPPL. FIGURE S9: Heatmaps of marker genes for 4 cell types
 
 ```{r heatmap_replicates, fig.width=10, fig.height=10}
 plot_marker_heatmap <- function(rep){
@@ -358,5 +360,5 @@ marker_heatmap_list <- lapply(setNames(c("rep1","rep2","rep3","nuc2"),c("rep1","
 p.marker_heatmap_replicates <- plot_grid(plotlist = marker_heatmap_list)
 p.marker_heatmap_replicates
 
-#ggsave("figures/Suppl_figure_Heatmap_replicates_new.pdf", p.marker_heatmap_replicates, width = 10, height = 10)
+ggsave("figures/figures_final/Suppl_figure_S9_Heatmap_replicates_new.pdf", p.marker_heatmap_replicates, width = 10, height = 10)
 ```

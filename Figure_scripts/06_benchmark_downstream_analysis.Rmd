@@ -21,8 +21,8 @@ replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey"),
                              c("rep1", "rep2", "rep3", "nuc2")) 
 
 denisenko_colors <- setNames(
-  c(RColorBrewer::brewer.pal(11, "Paired"),"darkgrey","grey"),
-  c("PT","CD_IC" ,   "CD_PC", "CD_Trans" ,     "CNT" ,     "DCT",     "Endo",      "Fib","aLOH",   "dLOH",    "MC" ,    "Podo","Immune"))
+ c("#88CCEE", "#6699CC",  "#44AA99","#117733", "#CC6677",  "#661100","#DDCC77", "#882255", "#AA4499", "#332288", "#999933", "#888888","lightgrey"),
+  c("PT",      "CD_IC" ,   "CD_PC", "CD_Trans" , "CNT" ,    "DCT",     "Endo",    "Fib",     "aLOH",   "dLOH",     "MC" ,    "Podo",   "Immune"))
 ```
 
 
@@ -168,7 +168,7 @@ p.UMAPs_marker <- plot_grid(plotlist = lapply(setNames(names(seu_list_rep2), nam
 ### Figure 6C: Expression fraction
 
 ```{r expression_frac}
-topGenes <- readRDS("Analysis/files/top10_PT_markers.RDS")
+topGenes <- readRDS("Extra_analyses/top10_PT_markers.RDS")
 
 l_expr_perGene <- list()
 for(method in c("raw", "CellBender", "DecontX", "SoupX")){
@@ -251,7 +251,7 @@ p.seurat_lfc_topGenes <- df_lfc_perGene_seurat %>%
 ### Figure 6E: Clustering and classification
 
 ```{r cluster_and_classification}
-df_eval_metrics <- readRDS("Analysis/files/benchmark_metrics.RDS")
+df_eval_metrics <- readRDS("Extra_analyses/benchmark_metrics.RDS")
 
 inp <- df_eval_metrics %>% 
   filter(default == T,
@@ -325,10 +325,10 @@ p.downstream_benchmark_new <- plot_grid(
 
 p.downstream_benchmark_new
 
-#ggsave("figures/Figure6_downstream_benchmark_new.pdf", p.downstream_benchmark_new, width = 9, height = 9)
+ggsave("figures/figures_final/Figure6.pdf", p.downstream_benchmark_new, width = 9, height = 9)
 ```
 
-## SUPPL. FIGURE S9: cell type UMAP all replicates
+## SUPPL. FIGURE S11: cell type UMAP all replicates
 
 ```{r UMAPs_ct, fig.width=9, fig.height=12}
 plot_UMAP_ct <- function(seu_list){
@@ -359,10 +359,10 @@ p.UMAP_ct_rep <- plot_grid(
 
 p.UMAP_ct_rep
 
-#ggsave("figures/Suppl_figure_UMAPs_corrected_CT.pdf",  p.UMAP_ct_rep, width = 9, height = 12)
+ggsave("figures/figures_final/Suppl_figure_S11_UMAPs_corrected_CT.pdf",  p.UMAP_ct_rep, width = 9, height = 12)
 ```
 
-## SUPPL. FIGURE S10: Slc34a1 UMAPs all replicates
+## SUPPL. FIGURE S12: Slc34a1 UMAPs all replicates
 
 ```{r UMAPs_slc, fig.width=9, fig.height=11}
 plot_UMAP_corrected_slc <- function(seu_list){
@@ -385,15 +385,15 @@ p.UMAP_slc_rep <- plot_grid(
 
 p.UMAP_slc_rep
 
-#ggsave("figures/Suppl_figure_UMAPs_corrected_Slc34a1.pdf",  p.UMAP_slc_rep, width = 9, height = 11)
+ggsave("figures/figures_final/Suppl_figure_S12_UMAPs_corrected_Slc34a1.pdf",  p.UMAP_slc_rep, width = 9, height = 11)
 ```
 
-## SUPPL. FIGURE S11: Effect on marker gene detection
+## SUPPL. FIGURE S13: Effect on marker gene detection
 
-### S11A: Heatmap
+### S13A: Heatmap
 
 ```{r marker_heatmap}
-cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
 
 cell_sample <- cell_metadata %>% 
   filter(Strain == "CAST", !is.na(celltype), replicate != "nuc3") %>% 
@@ -434,14 +434,13 @@ p.PT_heatmap_methods <- marker_plot_inp %>%
                 legend.box.margin=margin(-10,-10,-10,-10), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                 strip.background = element_rect(fill = "white"), strip.text.y =  element_text(size = 7))
 
-#p.PT_heatmap_methods
 ```
 
-### S11B: Overlap of top10 genes with Panglao markers
+### S13B: Overlap of top10 genes with Panglao markers
 
 ```{r panglao_suppl1}
-panglao_markers <- readRDS("Analysis/files/panglao_markers_Mm.RDS") 
-sigSEU<- readRDS("Analysis/files/DE_seurat_sigUP.RDS")  %>% 
+panglao_markers <- readRDS("files/panglao_markers_Mm.RDS") 
+sigSEU<- readRDS("Extra_analyses/DE_seurat_sigUP.RDS")  %>% 
   group_by(method2,replicate) %>% 
   mutate( rnk = dense_rank(-avg_log2FC),
           panglao = gene %in% panglao_markers) %>% 
@@ -459,7 +458,7 @@ top10.seu_panglao<-sigSEU %>% filter( panglao & rnk<=10) %>%
   theme(axis.title.y = element_blank(), legend.position =  "None")
 ```
 
-### S11C: LFC of Panglao markers
+### S13C: LFC of Panglao markers
 
 ```{r panglao_suppl2}
 tmp<-sigSEU %>% filter(Minrnk<=100) %>% dplyr::transmute(method=method2, replicate, gene, panglao, avg_log2FC)
@@ -480,7 +479,7 @@ top100cor<-tmp2 %>% ggplot( aes(x=avg_log2FC_raw, y=avg_log2FC,col=method)) +
 
 ```
 
-### Assemble Suppl Figure S11
+### Assemble Suppl Figure S13
 
 ```{r suppl_figure_markers, fig.width=10, fig.height=11}
 p.topMarkers_suppl <- plot_grid(p.PT_heatmap_methods,
@@ -491,9 +490,10 @@ p.topMarkers_suppl <- plot_grid(p.PT_heatmap_methods,
 
 p.topMarkers_suppl
 
-#ggsave("figures/Suppl_figure_topMarkersEval.pdf", p.topMarkers_suppl, width = 10, height = 11)
+ggsave("figures/figures_final/Suppl_figure_S13_topMarkersEval.pdf", p.topMarkers_suppl, width = 10, height = 11)
 ```
-## SUPPL. FIGURE S12: Absolute evaluation metrics
+
+## SUPPL. FIGURE S14: Absolute evaluation metrics
 
 ```{r absolute_metrics, fig.width=9, fig.height=2.5}
 p.absolute_clustering <- inp %>% 
@@ -515,10 +515,10 @@ p.absolute_clustering <- inp %>%
 
 p.absolute_clustering
 
-#ggsave("figures/Suppl_figure_metrics_absolute.pdf", p.absolute_clustering, width = 9, height = 2.5)
+ggsave("figures/figures_final/Suppl_figure_S14_metrics_absolute.pdf", p.absolute_clustering, width = 9, height = 2.5)
 ```
 
-## SUPPL. FIGURE S13: Evaluation of different parameter settings
+## SUPPL. FIGURE S15: Evaluation of different parameter settings
 
 ```{r param_settings, fig.width=8.5, fig.height=5.5}
 df_zscore <- df_eval_metrics %>% 
@@ -575,7 +575,7 @@ inp_param_setting <- df_zscore_mergeReplicates %>%
 p.parameter_settings <-  ggplot(inp_param_setting, aes(x = param, y = metric_pretty, fill = mean_zscore))+
     geom_tile(color = "darkgrey")+
     #geom_boxplot(aes(fill = method), alpha = 0.7)+
-    scale_fill_gradient2(low = "darkorange", high = "darkgreen")+
+    scale_fill_gradient2(low = "darkorange", high = "cyan4")+
     scale_y_discrete(position = "right")+
     facet_grid(evaluation_category~method,scales = "free", space = "free", switch = "y")+
     geom_hline(yintercept = 0)+
@@ -587,5 +587,5 @@ p.parameter_settings <-  ggplot(inp_param_setting, aes(x = param, y = metric_pre
 
 p.parameter_settings
 
-#ggsave("figures/Suppl_figure_parameter_settings.pdf", width = 8.5, height = 5.5)
+ggsave("figures/figures_final/Suppl_figure_S15_parameter_settings.pdf", width = 8.5, height = 5.5)
 ```

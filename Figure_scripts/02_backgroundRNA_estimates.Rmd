@@ -22,12 +22,16 @@ strain_colors = setNames(c("#D05957", "#4189C4", "#97B4DD", "lightgrey"),
 replicate_colors <- setNames(c("#F6D6B0","#917AA6","#D4E7A5", "lightgrey", "darkgrey"), 
                              c("rep1", "rep2", "rep3", "nuc2", "nuc3"))
 
+denisenko_colors <- setNames(
+ c("#88CCEE", "#6699CC",  "#44AA99","#117733", "#CC6677",  "#661100","#DDCC77", "#882255", "#AA4499", "#332288", "#999933", "#888888","lightgrey"),
+  c("PT",      "CD_IC" ,   "CD_PC", "CD_Trans" , "CNT" ,    "DCT",     "Endo",    "Fib",     "aLOH",   "dLOH",     "MC" ,    "Podo",   "Immune"))
+
 ```
 
 ## FIGURE 2: Background noise across replicates
 
 ```{r load_data}
-cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
 
 cell_metadata <- cell_metadata %>% 
    filter(Strain %in% c("CAST", "SvImJ", "BL6")) %>% 
@@ -66,8 +70,7 @@ for(exp in c("rep1", "rep2", "rep3", "nuc2","nuc3")){
 csc_full <- bind_rows(csc_list, .id = "replicate")
 # Filtering: remove intergenic variants & empty droplets/bad cells
 csc_full <- filter(csc_full, 
-                   !is.na(ENSEMBL),
-                   cell %in% cell_metadata$cell)
+                   !is.na(ENSEMBL))
 
 # Summarize for CAST variants
 summary_CAST_allele_freq <- csc_full %>% 
@@ -81,12 +84,8 @@ summary_CAST_allele_freq <- csc_full %>%
 
 # combine with cell metadata
 summary_CAST_alleles <- summary_CAST_allele_freq %>% 
-  left_join(select(cell_metadata,-CAST_AF)) %>% 
-  #left_join(select(cell_metadata, c(replicate,cell, best_singlet, prob_doublet, best_doublet, celltype))) %>% 
-  mutate(Strain = ifelse(Strain == "doublet" & grepl("CAST", best_singlet) & prob_doublet >= 0.99, "doublet (CAST/other)", Strain)) %>% 
-  filter(Strain %in% c("CAST", "doublet (CAST/other)", "BL6", "SvImJ")) %>% 
-  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")),
-         Strain = factor(Strain, levels = c("CAST", "doublet (CAST/other)", "BL6", "SvImJ")))
+  inner_join(select(cell_metadata,-CAST_AF)) %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")))
 
 CAST_df <- summary_CAST_alleles %>% 
   filter(Strain == "CAST") %>% 
@@ -118,10 +117,149 @@ p.fig2 <- plot_grid(p.global_cont,
 
 p.fig2
 
-#ggsave("figures/Figure2.pdf", p.fig2, height = 3.2, width = 11)
+ggsave("figures/figures_final/Figure2.pdf", p.fig2, height = 3.2, width = 11)
 ```
 
-## SUPPL. FIGURE S1: Estimates with confidence intervals
+## SUPPL. TABLE 1: Spearman correlation
+
+```{r spearman}
+cor_table <- CAST_df %>%
+  mutate(castaneus = nCount - nCount_Cont, 
+         domesticus = nCount_Cont) %>% 
+  group_by(replicate) %>% 
+  summarize(`rho_allele` = cor.test(castaneus, domesticus, method = "spearman")$estimate,
+            `p-value_allele` = format(cor.test(castaneus, domesticus, method = "spearman")$p.value, digits = 3),
+            `rho_bg` = cor.test(contPerCell_binom, nCount_RNA, method = "spearman")$estimate,
+            `p-value_bg` = format(cor.test(contPerCell_binom, nCount_RNA, method = "spearman")$p.value, digits = 3))
+
+# combine with correlation table from swapping analysis
+swapping_correlation <- readRDS("tmp/swapping_correlation.RDS")
+
+comb_table <- bind_cols(cor_table, select(swapping_correlation, -replicate))
+
+# Only include comparison of absolute amounts
+comb_table_reduced <- select(comb_table, c("replicate","rho_allele","p-value_allele","rho_abs","p-value_abs")) %>% 
+  mutate(`p-value_allele` = ifelse(as.numeric(`p-value_allele`)<2.2e-16, "<2.2e-16",`p-value_allele`),
+         `p-value_abs` = ifelse(as.numeric(`p-value_abs`)<2.2e-16, "<2.2e-16",`p-value_abs`))
+  
+
+print(xtable::xtable(comb_table_reduced), include.rownames = F)
+```
+
+## SUPPL. FIGURE S1: Detection of cross genotype contamination (CAST allele frequency)
+
+### Suppl. figure S1A: SNP coverage across cell types
+
+```{r include_SNP_coverage}
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+
+# number of informative SNPs per cell type
+p.SNP_coverage <- cell_metadata %>% 
+  #filter(Strain == "CAST") %>% 
+  group_by(replicate, celltype) %>% 
+  mutate(nCell = n(),
+         replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2"))) %>% 
+  filter(nCell > 50, !is.na(celltype)) %>% 
+  ggplot(aes(x = celltype, y = CAST_SNP_coverage / nCount_RNA, fill = celltype))+
+    geom_boxplot(outlier.size = 0.3)+
+    #coord_flip()+
+    scale_fill_manual(values = denisenko_colors)+
+    facet_grid(.~replicate, scales = "free", space = "free")+
+    theme_bw()+
+    labs(y = "Fraction of UMI counts \n covering an informative SNP")+
+    theme(legend.position = "none", axis.title.x = element_blank(),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+### Suppl. figure S1B: Overall allele frequencies
+
+```{r, fig.width=10, fig.height=3.5}
+csc_full <- bind_rows(csc_list, .id = "replicate")
+# Filtering: remove intergenic variants & empty droplets/bad cells
+csc_full <- filter(csc_full, 
+                   !is.na(ENSEMBL),
+                   cell %in% cell_metadata$cell)
+
+# overall CAST allele fraction
+overall_CAST_allele_freq <- csc_full %>% 
+  filter(SNPisALT == "CAST") %>% 
+  group_by(replicate) %>% 
+  summarise(nSNP = length(unique(position)),
+            nGene = length(unique(ENSEMBL)),
+            nCount = sum(DP),
+            nCount_CAST = sum(AD),
+            CAST_AF = nCount_CAST / nCount)
+
+p.overall_allele_frac <- overall_CAST_allele_freq %>% 
+  mutate(castaneus = CAST_AF,
+         domesticus = 1-CAST_AF,
+          replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
+  pivot_longer(c(castaneus,domesticus), names_to = "subspecies", values_to = "allele fraction") %>% 
+  mutate(subspecies = factor(subspecies, levels = c("domesticus", "castaneus"))) %>% 
+  ggplot(aes(x = replicate, y = `allele fraction`, fill = subspecies))+
+    geom_col(position = "stack")+
+    scale_fill_manual(values = c("#D05957","#97B4DD"), breaks = c("castaneus", "domesticus"))+
+    coord_flip()+
+    theme_bw()+
+    theme(legend.position = "top", legend.title = element_blank(), axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
+```
+
+### Suppl. figure S1C: CAST allele frequencies per cell
+
+```{r}
+# Contrasting only castaneus vs domesticus
+summary_CAST_AF_subspec <- csc_full %>% 
+  filter(SNPisALT == "CAST") %>% 
+  mutate(subspecies = case_when(Strain == "CAST" ~ "M.m. castaneus \n cells",
+                                Strain %in% c("SvImJ","BL6") ~ "M.m. domesticus \n cells",
+                                T ~ Strain)) %>% 
+  group_by(replicate, subspecies, cell) %>% 
+  summarise(#nSNP = length(unique(position)),
+            nGene = length(unique(ENSEMBL)),
+            nCount = sum(DP),
+            nCount_CAST = sum(AD),
+            CAST_AF = nCount_CAST / nCount)
+
+
+# combine with cell metadata
+summary_subspec <- summary_CAST_AF_subspec %>% 
+  left_join(select(cell_metadata,-CAST_AF)) %>% 
+                   #c(replicate,cell, best_singlet, prob_doublet, best_doublet))) %>% 
+  mutate(subspec2 = ifelse(subspecies == "doublet" & grepl("CAST", best_singlet) & prob_doublet >= 0.99, "doublet \n (castaneus/domesticus)", subspecies)) %>% 
+  filter(subspec2 %in% c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)")) %>% 
+  mutate(replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2"))),
+         subspec2 = factor(subspec2, levels = rev(c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)"))))
+
+
+p.subspec_CAST_frac <- ggplot(summary_subspec, aes(x = subspec2, y = CAST_AF))+
+  geom_boxplot(aes(fill = replicate), outlier.colour = NA)+
+  scale_fill_manual(values = replicate_colors, limits = force,
+                    breaks = c("rep3","rep1","rep2","nuc3","nuc2"))+
+  theme_bw()+
+  coord_flip()+
+  labs(y = "castaneus allele fraction")+
+  theme(axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
+```
+
+Assemble final figure: 
+
+```{r, width = 10, height = 7}
+p.allele_frac_revised <- plot_grid(
+  p.SNP_coverage,
+  plot_grid( p.overall_allele_frac,p.subspec_CAST_frac,
+          nrow = 1, labels = c("B","C"), rel_widths = c(0.6,1)),
+  nrow = 2, rel_heights = c(1.1,1), labels = c("A",""), scale = c(0.9,1)
+)
+
+p.allele_frac_revised
+
+ggsave("figures/figures_final/Suppl_figure_S1_CrossCont.pdf", p.allele_frac_revised, width = 10, height = 7)
+```
+
+
+
+## SUPPL. FIGURE S2: Estimates with confidence intervals
 
 ```{r estimation_with_CI, fig.width=10, fig.height=10}
 ### estimation of background RNA
@@ -176,83 +314,158 @@ p.estimation_confidence <- plot_grid(p.est_cell,
 
 p.estimation_confidence
 
-#ggsave("figures/Suppl_figure_EstConfidence.pdf", p.estimation_confidence, width = 10, height = 10)
+ggsave("figures/figures_final/Suppl_figure_S2_EstConfidence.pdf", p.estimation_confidence, width = 10, height = 10)
 ```
 
 
-## SUPPL. FIGURE S3: Detection of cross genotype contamination (CAST allele frequency)
+## SUPPL. FIGURE S4: Background noise levels dependance on cell calling
 
-```{r, fig.width=10, fig.height=3.5}
-cell_metadata <- readRDS("Analysis/files/cell_metadata.RDS")
-csc_full <- bind_rows(csc_list, .id = "replicate")
-# Filtering: remove intergenic variants & empty droplets/bad cells
-csc_full <- filter(csc_full, 
-                   !is.na(ENSEMBL),
-                   cell %in% cell_metadata$cell)
+```{r cell_calling_effect}
+assignment_list <- list()
 
-# Contrasting only castaneus vs domesticus
-summary_CAST_AF_subspec <- csc_full %>% 
-  filter(SNPisALT == "CAST") %>% 
-  mutate(subspecies = case_when(Strain == "CAST" ~ "M.m. castaneus \n cells",
-                                Strain %in% c("SvImJ","BL6") ~ "M.m. domesticus \n cells",
-                                T ~ Strain)) %>% 
-  group_by(replicate, subspecies, cell) %>% 
-  summarise(#nSNP = length(unique(position)),
-            nGene = length(unique(ENSEMBL)),
-            nCount = sum(DP),
-            nCount_CAST = sum(AD),
-            CAST_AF = nCount_CAST / nCount)
+for(rep in c("rep1","rep2","rep3","nuc2","nuc3")){
+  print(rep)
+  raw_mat <- Seurat::Read10X_h5(paste0("Snakemake_backup/input/",rep,"/cellranger/raw_feature_bc_matrix.h5"))
+  cell_BC <- read.table(paste0("Snakemake_backup/input/",rep,"/cell_BC.txt"))$V1
+  
+  assignment_list[[rep]] <- data.frame(BC = colnames(raw_mat), nUMI = Matrix::colSums(raw_mat)) %>% 
+    arrange(desc(nUMI)) %>% 
+    mutate(index = row_number()) %>% 
+    dplyr::filter(index <= 120000) %>% 
+    mutate(isCell = ifelse(BC %in% cell_BC, T, F)) %>% 
+    dplyr::rename(cell = BC)
+}
+
+assignment <- bind_rows(assignment_list, .id = "replicate")
+```
+
+### Suppl. figure S4A: UMI curves
+
+```{r}
+### Place legend within faceted plot
+### Copied from https://stackoverflow.com/questions/54438495/shift-legend-into-empty-facets-of-a-faceted-plot-in-ggplot2 
+library(gtable)
+library(cowplot)
+
+shift_legend <- function(p){
+
+  # check if p is a valid object
+  if(!"gtable" %in% class(p)){
+    if("ggplot" %in% class(p)){
+      gp <- ggplotGrob(p) # convert to grob
+    } else {
+      message("This is neither a ggplot object nor a grob generated from ggplotGrob. Returning original plot.")
+      return(p)
+    }
+  } else {
+    gp <- p
+  }
+
+  # check for unfilled facet panels
+  facet.panels <- grep("^panel", gp[["layout"]][["name"]])
+  empty.facet.panels <- sapply(facet.panels, function(i) "zeroGrob" %in% class(gp[["grobs"]][[i]]))
+  empty.facet.panels <- facet.panels[empty.facet.panels]
+  if(length(empty.facet.panels) == 0){
+    message("There are no unfilled facet panels to shift legend into. Returning original plot.")
+    return(p)
+  }
+
+  # establish extent of unfilled facet panels (including any axis cells in between)
+  empty.facet.panels <- gp[["layout"]][empty.facet.panels, ]
+  empty.facet.panels <- list(min(empty.facet.panels[["t"]]), min(empty.facet.panels[["l"]]),
+                             max(empty.facet.panels[["b"]]), max(empty.facet.panels[["r"]]))
+  names(empty.facet.panels) <- c("t", "l", "b", "r")
+
+  # extract legend & copy over to location of unfilled facet panels
+  guide.grob <- which(gp[["layout"]][["name"]] == "guide-box")
+  if(length(guide.grob) == 0){
+    message("There is no legend present. Returning original plot.")
+    return(p)
+  }
+  gp <- gtable_add_grob(x = gp,
+                        grobs = gp[["grobs"]][[guide.grob]],
+                        t = empty.facet.panels[["t"]],
+                        l = empty.facet.panels[["l"]],
+                        b = empty.facet.panels[["b"]],
+                        r = empty.facet.panels[["r"]],
+                        name = "new-guide-box")
+
+  # squash the original guide box's row / column (whichever applicable)
+  # & empty its cell
+  guide.grob <- gp[["layout"]][guide.grob, ]
+  if(guide.grob[["l"]] == guide.grob[["r"]]){
+    gp <- gtable_squash_cols(gp, cols = guide.grob[["l"]])
+  }
+  if(guide.grob[["t"]] == guide.grob[["b"]]){
+    gp <- gtable_squash_rows(gp, rows = guide.grob[["t"]])
+  }
+  gp <- gtable_remove_grobs(gp, "guide-box")
+
+  return(gp)
+}
+```
+
+```{r UMI_curve}
+p1 <- assignment %>% 
+   mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2"))) %>% 
+  
+  ggplot(aes(x = index, y = nUMI, color = isCell))+
+      scale_color_manual(values = c("grey","red"))+
+      geom_point(size = 0.2)+
+      scale_y_log10(limits = c(1, 100000))+
+      scale_x_log10()+
+      #geom_hline(yintercept = br.out@metadata$inflection, linetype = "dashed", color = "green")+
+      geom_vline(xintercept = c(1000), color = "darkgrey", linetype = "dashed") +
+      labs(x = "cell rank", y = "total UMI count", color = "Called as cell")+
+      facet_wrap(~replicate, nrow = 2)+
+      theme_bw()+
+      #theme(legend.position = c(0.2,0.2))+ 
+      guides(colour = guide_legend(override.aes = list(size=4)))
+
+p.UMI_curve_log <- shift_legend(p1)
+```
+
+### Suppl. figure S4B: Effect of cell calling on background RNA estimation
+
+```{r}
+# combine with cell metadata (for background estimates)
+cell_metadata <- readRDS("Extra_analyses/cell_metadata.RDS")
+
+cell_metadata_index <- left_join(assignment, cell_metadata)
+
+cell_calling_cutoffs <- rbind(
+  filter(cell_metadata_index, index <= 100) %>% mutate(cutoff = "top100 droplets"),
+  filter(cell_metadata_index, index <= 1000) %>% mutate(cutoff = "top1000 droplets"),
+  filter(cell_metadata_index, index <= 2000) %>% mutate(cutoff = "top2000 droplets"),
+  filter(cell_metadata_index, index <= 5000) %>% mutate(cutoff = "top5000 droplets"),
+  filter(cell_metadata_index, isCell == T) %>% mutate(cutoff = "All called cells")
+)
 
 
-# combine with cell metadata
-summary_subspec <- summary_CAST_AF_subspec %>% 
-  left_join(select(cell_metadata,-CAST_AF)) %>% 
-                   #c(replicate,cell, best_singlet, prob_doublet, best_doublet))) %>% 
-  mutate(subspec2 = ifelse(subspecies == "doublet" & grepl("CAST", best_singlet) & prob_doublet >= 0.99, "doublet \n (castaneus/domesticus)", subspecies)) %>% 
-  filter(subspec2 %in% c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)")) %>% 
-  mutate(replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2"))),
-         subspec2 = factor(subspec2, levels = rev(c("M.m. castaneus \n cells","M.m. domesticus \n cells", "doublet \n (castaneus/domesticus)"))))
-
-
-
-p.subspec_CAST_frac <- ggplot(summary_subspec, aes(x = subspec2, y = CAST_AF))+
-  #ggbeeswarm::geom_beeswarm(aes(color = replicate))
-  geom_boxplot(aes(fill = replicate), outlier.colour = NA)+
-  scale_fill_manual(values = replicate_colors, limits = force,
-                    breaks = c("rep3","rep1","rep2","nuc3","nuc2"))+
-  theme_bw()+
-  coord_flip()+
-  labs(y = "castaneus allele fraction")+
-  theme(axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
-
-
-# overall CAST allele fraction
-overall_CAST_allele_freq <- csc_full %>% 
-  filter(SNPisALT == "CAST") %>% 
-  group_by(replicate) %>% 
-  summarise(nSNP = length(unique(position)),
-            nGene = length(unique(ENSEMBL)),
-            nCount = sum(DP),
-            nCount_CAST = sum(AD),
-            CAST_AF = nCount_CAST / nCount)
-
-p.overall_allele_frac <- overall_CAST_allele_freq %>% 
-  mutate(castaneus = CAST_AF,
-         domesticus = 1-CAST_AF,
-          replicate = factor(replicate, levels = rev(c("rep3","rep1","rep2","nuc3","nuc2")))) %>% 
-  pivot_longer(c(castaneus,domesticus), names_to = "subspecies", values_to = "allele fraction") %>% 
-  mutate(subspecies = factor(subspecies, levels = c("domesticus", "castaneus"))) %>% 
-  ggplot(aes(x = replicate, y = `allele fraction`, fill = subspecies))+
-    geom_col(position = "stack")+
-    scale_fill_manual(values = c("#D05957","#97B4DD"), breaks = c("castaneus", "domesticus"))+
-    coord_flip()+
+p.cell_calling_background <- cell_calling_cutoffs %>% 
+  mutate(replicate = factor(replicate, levels = c("rep3","rep1","rep2","nuc3","nuc2")),
+         cutoff = factor(cutoff, levels = c("top100 droplets","top1000 droplets","top2000 droplets","top5000 droplets", "All called cells"))) %>% 
+  filter(Strain %in% c("CAST"),
+         cutoff %in% c("top1000 droplets", "All called cells")) %>% 
+  ggplot(aes(x = replicate, y = 100*contPerCell_binom, fill = replicate))+
+    geom_boxplot(outlier.colour = NA)+
+    scale_y_continuous(limits = c(0,70))+
+    facet_grid(~cutoff)+
+    scale_fill_manual(values = replicate_colors)+
     theme_bw()+
-    theme(legend.position = "top", legend.title = element_blank(), axis.title.y = element_blank(), axis.text.y = element_text(size = 12))
+    labs(y = "% background RNA/ cell")+
+    theme(legend.position = "none", axis.title.x = element_blank())
+```
 
-p.allele_frac <- plot_grid(p.subspec_CAST_frac, p.overall_allele_frac,
-          nrow = 1, labels = c("A","B"), rel_widths = c(1,0.6))
 
-p.allele_frac
+### Assemble Suppl. figure S4
+ 
+```{r, width = 8, height = 7}
+p.suppl_cell_calling <- plot_grid(p.UMI_curve_log, 
+          p.cell_calling_background, 
+          nrow = 2, rel_heights = c(1.6,1), align = "v", axis = "lr", labels = c("A","B"))
 
-#ggsave("figures/Suppl_figure_CrossCont.pdf", p.allele_frac, width = 10, height = 3.5)
+p.suppl_cell_calling
+
+ggsave("figures/figures_final/Suppl_figure_S4_cell_calling_cutoffs.png", p.suppl_cell_calling, height = 7, width = 8) 
 ```
