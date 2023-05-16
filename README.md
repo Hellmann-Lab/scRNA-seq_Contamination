@@ -46,9 +46,10 @@ This folder also contains some files that are necessary to reproduce the analysi
 
 ## Figure scripts
 
-- **01_dataset_description**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy (related to Figure 1, Suppl. Figure S2). 
-- **02_backgroundRNA_estimates**: Visualization of backround noise fractions per cell (related to Figure 2, Suppl. Figures S1,S3).
-- **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3, Suppl. Figures S4,S5).
-- **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4, Suppl. Figures S6,S7).
-- **05_benchmark_estimation**: Comparison of background noise estimation accuracy of different computional methods (related to Figure 5, Suppl. Figure S8)
-- **06_benchmark_downstream_analysis**: Summarizing the method comparison results on downstream analysis effect based on the Snakemake pipeline across datasets and parameter settings (related to Figure 6, Suppl. Figures S9-13). 
+- **01_dataset_description**: Strain and cell type composition of input datasets, as well as some additional statistics about the genotype estimation strategy (related to Figure 1, Suppl. Figure S3). 
+- **02_backgroundRNA_estimates**: Visualization of background noise fractions per cell (related to Figure 2, Suppl. Figures S1,S2,S4).
+- **03_origin_of_background RNA**: Comparison of endogenous expression, background noise contamination and empty droplet profiles (related to Figure 3, Suppl. Figures S5,S6).
+- **03_02_barcode_swapping**: Identification and quantification of barcode swapping events originating from PCR chimera (related to Suppl. Figure S7)
+- **04_effect_on_downstream_analysis**: Impact of background noise on specificity and detectability of marker genes (related to Figure 4, Suppl. Figures S8,S9).
+- **05_benchmark_estimation**: Comparison of background noise estimation accuracy of different computional methods (related to Figure 5, Suppl. Figure S10)
+- **06_benchmark_downstream_analysis**: Summarizing the method comparison results on downstream analysis effect based on the Snakemake pipeline across datasets and parameter settings (related to Figure 6, Suppl. Figures S11-15). 
