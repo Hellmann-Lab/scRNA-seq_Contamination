@@ -41,8 +41,8 @@ Beyond the standardized pipeline, we perform further analysis to compare empty d
 This folder also contains some files that are necessary to reproduce the analysis and figures:   
 - **cell_metadata.RDS**: cell-wise metadata information including *replicate*, *celltype*, *Strain*, background noise level (*contPerCell_binom*) and some cell QC metrics.  
 - **benchmark_metrics.RDS**: For each combination of method (CellBender, SoupX, DecontX, raw), parameter setting and replicate this table contains a collection of metrics to evaluate the performance in estimating background noise levels and improving downstream analysis after correction. 
-- Proximal tubule cells markers: 1) Downloaded from [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27Proximal%20tubule%20cells%27) that were detected (**panglao_markers_Mm.RDS**) and the top10 markers with the highest average expression in PT cells (**top10_PT_markers.RDS**). 2) Genes that were detected as DE between PT and other cells after correction with CellBender/SoupX/DecontX (**DE_seurat_sigUP.RDS**)
-- Stats related to informative variants and their coverage per cell (**per_cell_stats_CAST_variants.RDS, position_stats_summary.RDS**)
+- Proximal tubule cell markers: 1) Downloaded from [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27Proximal%20tubule%20cells%27) that were detected (**panglao_markers_Mm.RDS**) and the top10 markers with the highest average expression in PT cells (**top10_PT_markers.RDS**). 2) Genes that were detected as DE between PT and other cells after correction with CellBender/SoupX/DecontX (**DE_seurat_sigUP.RDS**)
+- Statistics related to informative variants and their coverage per cell (**per_cell_stats_CAST_variants.RDS, position_stats_summary.RDS**)
 
 ## Figure scripts
 
