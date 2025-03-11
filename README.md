@@ -12,6 +12,7 @@ We process multiple single-cell and single-nucleus RNA-seq datasets of mouse kid
 - **filtering and preprocessing:** Basic filtering, processing and clustering steps to prepare the count matrix for further analysis.
 - **applying different correction methods:** We compare three methods that are designed to remove noise originating from ambient/ background RNA: [CellBender](https://www.biorxiv.org/content/10.1101/791699v1), [SoupX](https://doi.org/10.1093/gigascience/giaa151) and [DecontX](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1950-6) in a range of different parameter settings. 
 - **evaluation of correction performance:** We evaluated the output of each method by comparing to our genotype based estimations and calculating metrics to assess denoising performance.
+
 The intermediate output for the classification, genotyping and genotype estimation steps can be downloaded from [zenodo](https://zenodo.org/records/15006097). 
 
 ## Snakemake_benchmark
